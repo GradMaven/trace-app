@@ -16,8 +16,8 @@ export const NAV: NavSection[] = [
     items: [
       { label: 'Evidence', href: '/data/evidence', ready: true },
       { label: 'Documents', href: '/data/documents', ready: true },
-      { label: 'Activity Data', href: '/data/activity' },
-      { label: 'Calculations', href: '/data/calculations' },
+      { label: 'Activity Data', href: '/data/activity', ready: true },
+      { label: 'Calculations', href: '/data/calculations', ready: true },
       { label: 'Data Quality', href: '/data/quality' },
     ],
   },
@@ -33,10 +33,10 @@ export const NAV: NavSection[] = [
   {
     label: 'Carbon',
     items: [
-      { label: 'Scope 1', href: '/carbon/scope-1' },
-      { label: 'Scope 2', href: '/carbon/scope-2' },
-      { label: 'Scope 3', href: '/carbon/scope-3' },
-      { label: 'Emission Factors', href: '/carbon/factors' },
+      { label: 'Scope 1', href: '/carbon/scope-1', ready: true },
+      { label: 'Scope 2', href: '/carbon/scope-2', ready: true },
+      { label: 'Scope 3', href: '/carbon/scope-3', ready: true },
+      { label: 'Emission Factors', href: '/carbon/factors', ready: true },
       { label: 'Scenarios', href: '/carbon/scenarios' },
     ],
   },

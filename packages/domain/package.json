@@ -19,7 +19,8 @@
     "clean": "rimraf dist .turbo *.tsbuildinfo"
   },
   "dependencies": {
-    "@trace/shared": "workspace:*"
+    "@trace/shared": "workspace:*",
+    "decimal.js": "^10.4.3"
   },
   "devDependencies": {
     "rimraf": "^6.0.1",

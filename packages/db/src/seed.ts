@@ -20,7 +20,9 @@ import {
   ensurePlatformRole,
   getPrisma,
   provisionOrganization,
+  recomputeEmissions,
   recomputeSupplierPassport,
+  runCalculation,
   transitionEvidence,
   withOrgContext,
   withPlatformContext,
@@ -154,7 +156,313 @@ async function main(): Promise<void> {
 
   await seedEvidence();
   console.warn('[seed] Evidence records and linked datapoints created.');
+
+  await seedCarbon();
+  console.warn('[seed] Emission factors, activity data, calculations, and FY2025 emissions created.');
   console.warn('[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).');
+}
+
+const LIBRARY_FACTORS: Array<{
+  sourceRef: string;
+  name: string;
+  value: number;
+  numeratorUnit: 'kgCO2e' | 'tCO2e';
+  denominatorUnit: string;
+  activityDimension: string;
+  scope: string;
+  ghgCategory: string | null;
+  geography: string | null;
+  methodology: string | null;
+}> = [
+  {
+    sourceRef: 'steel-crude-de',
+    name: 'Crude steel — Germany (illustrative)',
+    value: 2.1,
+    numeratorUnit: 'tCO2e',
+    denominatorUnit: 't',
+    activityDimension: 'mass',
+    scope: 'scope_3',
+    ghgCategory: 'cat_1_purchased_goods_services',
+    geography: 'DE',
+    methodology: 'average_data',
+  },
+  {
+    sourceRef: 'electricity-grid-de-location',
+    name: 'Grid electricity — Germany, location-based (illustrative)',
+    value: 0.38,
+    numeratorUnit: 'kgCO2e',
+    denominatorUnit: 'kWh',
+    activityDimension: 'energy',
+    scope: 'scope_2_location',
+    ghgCategory: null,
+    geography: 'DE',
+    methodology: 'average_data',
+  },
+  {
+    sourceRef: 'electricity-grid-de-market',
+    name: 'Residual mix electricity — Germany, market-based (illustrative)',
+    value: 0.42,
+    numeratorUnit: 'kgCO2e',
+    denominatorUnit: 'kWh',
+    activityDimension: 'energy',
+    scope: 'scope_2_market',
+    ghgCategory: null,
+    geography: 'DE',
+    methodology: 'average_data',
+  },
+  {
+    sourceRef: 'natural-gas-combustion',
+    name: 'Natural gas combustion (illustrative)',
+    value: 0.184,
+    numeratorUnit: 'kgCO2e',
+    denominatorUnit: 'kWh',
+    activityDimension: 'energy',
+    scope: 'scope_1',
+    ghgCategory: null,
+    geography: null,
+    methodology: 'fuel_based',
+  },
+  {
+    sourceRef: 'diesel-combustion',
+    name: 'Diesel combustion, stationary + mobile (illustrative)',
+    value: 2.68,
+    numeratorUnit: 'kgCO2e',
+    denominatorUnit: 'L',
+    activityDimension: 'volume',
+    scope: 'scope_1',
+    ghgCategory: null,
+    geography: null,
+    methodology: 'fuel_based',
+  },
+  {
+    sourceRef: 'road-freight-hgv',
+    name: 'Road freight, average HGV (illustrative)',
+    value: 0.107,
+    numeratorUnit: 'kgCO2e',
+    denominatorUnit: 't.km',
+    activityDimension: 'freight',
+    scope: 'scope_3',
+    ghgCategory: 'cat_4_upstream_transportation',
+    geography: null,
+    methodology: 'distance_based',
+  },
+  {
+    sourceRef: 'air-travel-long-haul',
+    name: 'Air travel, long-haul economy (illustrative)',
+    value: 0.15,
+    numeratorUnit: 'kgCO2e',
+    denominatorUnit: 'p.km',
+    activityDimension: 'passenger_distance',
+    scope: 'scope_3',
+    ghgCategory: 'cat_6_business_travel',
+    geography: null,
+    methodology: 'distance_based',
+  },
+  {
+    sourceRef: 'eeio-purchased-services-eur',
+    name: 'Spend-based EEIO — purchased services, EUR (illustrative)',
+    value: 0.28,
+    numeratorUnit: 'kgCO2e',
+    denominatorUnit: 'EUR',
+    activityDimension: 'currency',
+    scope: 'scope_3',
+    ghgCategory: 'cat_1_purchased_goods_services',
+    geography: null,
+    methodology: 'spend_based',
+  },
+];
+
+async function seedCarbon(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const analystId = DEMO.users.analyst.id;
+  const adminId = DEMO.users.admin.id;
+
+  await withOrgContext(orgId, async (db) => {
+    // 1. Shared library factors (illustrative — not for statutory reporting).
+    for (const f of LIBRARY_FACTORS) {
+      await db.emissionFactor.create({
+        data: {
+          organizationId: null,
+          source: 'TRACE-DEMO',
+          sourceRef: f.sourceRef,
+          name: f.name,
+          value: f.value,
+          numeratorUnit: f.numeratorUnit,
+          denominatorUnit: f.denominatorUnit,
+          activityDimension: f.activityDimension,
+          gwpSet: 'AR6',
+          scope: f.scope as never,
+          ghgCategory: (f.ghgCategory as never) ?? null,
+          geography: f.geography,
+          methodology: (f.methodology as never) ?? null,
+          validFrom: new Date('2024-01-01'),
+          notes: 'Illustrative demo factor — replace with a licensed dataset before reporting.',
+        },
+      });
+    }
+
+    const rheinstahl = await db.supplier.findFirst({
+      where: { organizationId: orgId, name: SUPPLIER_ROWS[0]!.name },
+    });
+
+    // 2. An organization-specific supplier factor (beats the library on selection).
+    await db.emissionFactor.create({
+      data: {
+        organizationId: orgId,
+        source: 'CUSTOM',
+        sourceRef: 'rheinstahl-steel-2025',
+        name: 'Rheinstahl steel — supplier-specific PCF (illustrative)',
+        value: 2.05,
+        numeratorUnit: 'tCO2e',
+        denominatorUnit: 't',
+        activityDimension: 'mass',
+        gwpSet: 'AR6',
+        scope: 'scope_3' as never,
+        ghgCategory: 'cat_1_purchased_goods_services' as never,
+        geography: 'DE',
+        methodology: 'supplier_specific' as never,
+        validFrom: new Date('2025-01-01'),
+        notes: 'From the supplier questionnaire; illustrative.',
+        createdByUserId: analystId,
+      },
+    });
+
+    // 3. Activity data (FY2025).
+    const activities: Array<{
+      scope: string;
+      ghgCategory: string | null;
+      category: string;
+      value: number;
+      unit: string;
+      subjectType: string;
+      subjectId: string;
+      supplierId?: string;
+      description: string;
+    }> = [
+      {
+        scope: 'scope_1',
+        ghgCategory: null,
+        category: 'Stationary combustion — natural gas',
+        value: 4_200_000,
+        unit: 'kWh',
+        subjectType: 'organization',
+        subjectId: orgId,
+        description: 'HQ + Powertrain site heating',
+      },
+      {
+        scope: 'scope_1',
+        ghgCategory: null,
+        category: 'Mobile combustion — diesel fleet',
+        value: 180_000,
+        unit: 'L',
+        subjectType: 'organization',
+        subjectId: orgId,
+        description: 'Owned logistics fleet',
+      },
+      {
+        scope: 'scope_2_location',
+        ghgCategory: null,
+        category: 'Purchased electricity (location-based)',
+        value: 12_400_000,
+        unit: 'kWh',
+        subjectType: 'organization',
+        subjectId: orgId,
+        description: 'All German sites',
+      },
+      {
+        scope: 'scope_2_market',
+        ghgCategory: null,
+        category: 'Purchased electricity (market-based)',
+        value: 12_400_000,
+        unit: 'kWh',
+        subjectType: 'organization',
+        subjectId: orgId,
+        description: 'All German sites — residual mix',
+      },
+      {
+        scope: 'scope_3',
+        ghgCategory: 'cat_1_purchased_goods_services',
+        category: 'Purchased steel — Rheinstahl',
+        value: 1283,
+        unit: 't',
+        subjectType: 'supplier',
+        subjectId: rheinstahl?.id ?? orgId,
+        supplierId: rheinstahl?.id,
+        description: 'Crude steel deliveries, FY2025',
+      },
+      {
+        scope: 'scope_3',
+        ghgCategory: 'cat_4_upstream_transportation',
+        category: 'Upstream road freight',
+        value: 2_400_000,
+        unit: 't.km',
+        subjectType: 'organization',
+        subjectId: orgId,
+        description: 'Inbound logistics, FY2025',
+      },
+    ];
+
+    const rheinstahlEvidence = await db.evidence.findFirst({
+      where: { organizationId: orgId, title: 'Rheinstahl Sustainability Report 2025' },
+    });
+
+    for (const a of activities) {
+      const row = await db.activityData.create({
+        data: {
+          organizationId: orgId,
+          scope: a.scope as never,
+          ghgCategory: (a.ghgCategory as never) ?? null,
+          category: a.category,
+          description: a.description,
+          value: a.value,
+          unit: a.unit,
+          reportingPeriod: 'FY2025',
+          provenance: a.scope === 'scope_3' ? 'supplier_reported' : 'measured',
+          subjectType: a.subjectType,
+          subjectId: a.subjectId,
+          supplierId: a.supplierId ?? null,
+          occurredOn: new Date('2025-12-31'),
+          createdByUserId: analystId,
+        },
+      });
+
+      if (a.category.includes('Rheinstahl') && rheinstahlEvidence) {
+        await db.activityEvidence.create({
+          data: {
+            organizationId: orgId,
+            activityId: row.id,
+            evidenceId: rheinstahlEvidence.id,
+            linkedByUserId: analystId,
+          },
+        });
+      }
+
+      await runCalculation(db, {
+        organizationId: orgId,
+        activityId: row.id,
+        actorUserId: analystId,
+        requestId: 'seed',
+      });
+    }
+
+    await recomputeEmissions(db, {
+      organizationId: orgId,
+      reportingPeriod: 'FY2025',
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
+
+    await writeAuditLog(db, {
+      organizationId: orgId,
+      actorId: adminId,
+      action: 'seed.carbon_completed',
+      resourceType: 'organization',
+      resourceId: orgId,
+      before: null,
+      after: { libraryFactors: LIBRARY_FACTORS.length, activities: activities.length, demo: true },
+      requestId: 'seed',
+    });
+  });
 }
 
 async function seedEvidence(): Promise<void> {

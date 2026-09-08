@@ -250,6 +250,48 @@ evidence_verification(id, organization_id, evidence_id, method, outcome, verifie
 - `supplier_evidence_ref` gained `document_id` and `promoted_evidence_id`: a
   supplier-submitted reference can be promoted into a first-class `evidence` row.
 
+### Carbon (Phase 4)
+
+```
+emission_factor(id, organization_id NULL, source, source_ref, name, value numeric(30,12),
+                numerator_unit co2e_unit, denominator_unit, activity_dimension, gwp_set,
+                scope ghg_scope, ghg_category NULL, geography NULL, methodology NULL,
+                valid_from date, valid_to date NULL, version, is_current, notes)
+  -- organization_id NULL => shared library; scoped by the repository layer (like `role`)
+activity_data(id, organization_id, scope ghg_scope, ghg_category NULL, category, description,
+              value numeric(20,6), unit, reporting_period, provenance, subject_type, subject_id,
+              supplier_id NULL, source_ref, occurred_on date, deleted_at)
+activity_evidence(organization_id, activity_id, evidence_id, linked_by_user_id, linked_at,
+                  @@id(activity_id, evidence_id))
+calculation(id, organization_id, activity_id, emission_factor_id, methodology,
+            input_value, input_unit, normalized_value, normalized_unit, factor_value,
+            factor_numerator_unit, factor_denominator_unit, factor_source, factor_version,
+            gwp_set, scope, ghg_category NULL, reporting_period, result_value_tco2e,
+            assumptions jsonb, steps jsonb, factor_selection_reasons jsonb,
+            calculation_version, supersedes_id NULL, calculated_by_user_id, calculated_at,
+            approved_by_user_id NULL, approved_at NULL)   -- IMMUTABLE (no UPDATE of inputs)
+emission(id, organization_id, scope, ghg_category NULL, reporting_period, value_tco2e,
+         calculation_count, method_summary, source_calculation_ids uuid[], computed_at,
+         UNIQUE(organization_id, scope, ghg_category, reporting_period))   -- projection
+```
+
+- **All arithmetic is in `@trace/domain`** (decimal.js): `convert` (unit registry, exact,
+  cross-dimension throws, no currency FX), `computeEmission` (normalise activity → apply
+  factor → tonnes CO2e; stores `steps`), `recompute` (reproduces the stored result
+  bit-for-bit), `selectEmissionFactor` (org-specific > library, geography/method/validity
+  ranking, returns reasons), `summariseInventory` / `aggregateEmissions`.
+- A `calculation` row stores **every input by value and by reference**, so
+  `reproduceCalculation` re-runs the engine on the row alone. `recomputeCalculation`
+  re-selects the factor and chains a new row (`supersedes_id`); the old row is frozen —
+  a 2027 factor change never alters a 2026 result (Principle 35).
+- Running a calculation also creates a `datapoint` (`provenance = calculated`,
+  `calculation_id` set) and inherits the activity's evidence links.
+- RLS (`FORCE`, `current_org()`) on `activity_data`, `activity_evidence`, `calculation`,
+  `emission` — migration `0008_carbon_rls`. `emission_factor` is repository-scoped.
+- Unit and unit-conversion tables from the earlier draft are **not** created: the
+  `@trace/domain` unit registry is the single source of truth, exposed via
+  `GET /emission-factors/units`.
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

@@ -32,3 +32,12 @@ export type { RecomputePassportArgs, RecomputedPassport } from './supplier';
 
 export { transitionEvidence, supersedeEvidence } from './evidence';
 export type { TransitionEvidenceArgs, SupersedeEvidenceArgs } from './evidence';
+
+export {
+  runCalculation,
+  reproduceCalculation,
+  recomputeCalculation,
+  recomputeEmissions,
+  inventorySummary,
+} from './carbon';
+export type { RunCalculationArgs, RunCalculationResult } from './carbon';

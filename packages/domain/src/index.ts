@@ -3,3 +3,7 @@ export * from './audit/hash-chain';
 export * from './supplier/questionnaire';
 export * from './supplier/passport';
 export * from './evidence/lifecycle';
+export * from './carbon/units';
+export * from './carbon/engine';
+export * from './carbon/factors';
+export * from './carbon/aggregate';

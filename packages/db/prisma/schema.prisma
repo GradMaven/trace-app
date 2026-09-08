@@ -102,15 +102,19 @@ model Organization {
   createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  businessUnits BusinessUnit[]
-  memberships   Membership[]
-  roles         Role[]
-  invitations   Invitation[]
-  sessions      Session[]
-  suppliers     Supplier[]
-  documents     Document[]
-  evidence      Evidence[]
-  datapoints    Datapoint[]
+  businessUnits   BusinessUnit[]
+  memberships     Membership[]
+  roles           Role[]
+  invitations     Invitation[]
+  sessions        Session[]
+  suppliers       Supplier[]
+  documents       Document[]
+  evidence        Evidence[]
+  datapoints      Datapoint[]
+  emissionFactors EmissionFactor[]
+  activityData    ActivityData[]
+  calculations    Calculation[]
+  emissions       Emission[]
 
   @@map("organization")
 }
@@ -566,6 +570,7 @@ model Evidence {
   supersedes       Evidence?              @relation("EvidenceVersion", fields: [supersedesId], references: [id], onDelete: SetNull)
   supersededBy     Evidence[]             @relation("EvidenceVersion")
   datapoints       DatapointEvidence[]
+  activityLinks    ActivityEvidence[]
   verifications    EvidenceVerification[]
   fromSupplierRefs SupplierEvidenceRef[]  @relation("EvidenceFromSupplierRef")
 
@@ -589,16 +594,218 @@ model Datapoint {
   reportingPeriod String?    @map("reporting_period")
   subjectType     String     @map("subject_type")
   subjectId       String     @map("subject_id") @db.Uuid
+  calculationId   String?    @map("calculation_id") @db.Uuid
   createdByUserId String     @map("created_by_user_id") @db.Uuid
   createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  calculation  Calculation?        @relation(fields: [calculationId], references: [id], onDelete: SetNull)
   evidence     DatapointEvidence[]
 
   @@index([organizationId, subjectType, subjectId])
   @@index([organizationId, metricKey])
   @@map("datapoint")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 — Carbon Engine
+// ---------------------------------------------------------------------------
+
+enum GhgScope {
+  scope_1
+  scope_2_location
+  scope_2_market
+  scope_3
+
+  @@map("ghg_scope")
+}
+
+enum GhgCategory {
+  cat_1_purchased_goods_services
+  cat_2_capital_goods
+  cat_3_fuel_energy_activities
+  cat_4_upstream_transportation
+  cat_5_waste_generated
+  cat_6_business_travel
+  cat_7_employee_commuting
+  cat_8_upstream_leased_assets
+  cat_9_downstream_transportation
+  cat_10_processing_sold_products
+  cat_11_use_sold_products
+  cat_12_end_of_life_sold_products
+  cat_13_downstream_leased_assets
+  cat_14_franchises
+  cat_15_investments
+
+  @@map("ghg_category")
+}
+
+enum Methodology {
+  supplier_specific
+  average_data
+  spend_based
+  distance_based
+  fuel_based
+  energy_based
+  hybrid
+
+  @@map("methodology")
+}
+
+enum Co2eUnit {
+  gCO2e
+  kgCO2e
+  tCO2e
+  ktCO2e
+
+  @@map("co2e_unit")
+}
+
+/// A versioned emission factor. `organizationId` null => shared library.
+/// Calculations pin a specific row (never mutated).
+model EmissionFactor {
+  id                String       @id @default(uuid()) @db.Uuid
+  organizationId    String?      @map("organization_id") @db.Uuid
+  source            String
+  sourceRef         String       @map("source_ref")
+  name              String
+  value             Decimal      @db.Decimal(30, 12)
+  numeratorUnit     Co2eUnit     @map("numerator_unit")
+  denominatorUnit   String       @map("denominator_unit")
+  activityDimension String       @map("activity_dimension")
+  gwpSet            String       @default("AR6") @map("gwp_set")
+  scope             GhgScope
+  ghgCategory       GhgCategory? @map("ghg_category")
+  geography         String?
+  methodology       Methodology?
+  validFrom         DateTime     @map("valid_from") @db.Date
+  validTo           DateTime?    @map("valid_to") @db.Date
+  version           Int          @default(1)
+  isCurrent         Boolean      @default(true) @map("is_current")
+  notes             String?
+  createdByUserId   String?      @map("created_by_user_id") @db.Uuid
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  calculations Calculation[]
+
+  @@index([source, sourceRef])
+  @@index([organizationId, scope])
+  @@index([scope, ghgCategory])
+  @@map("emission_factor")
+}
+
+model ActivityData {
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String       @map("organization_id") @db.Uuid
+  scope           GhgScope
+  ghgCategory     GhgCategory? @map("ghg_category")
+  category        String
+  description     String?
+  value           Decimal      @db.Decimal(20, 6)
+  unit            String
+  reportingPeriod String       @map("reporting_period")
+  provenance      Provenance   @default(supplier_reported)
+  subjectType     String       @map("subject_type")
+  subjectId       String       @map("subject_id") @db.Uuid
+  supplierId      String?      @map("supplier_id") @db.Uuid
+  sourceRef       String?      @map("source_ref")
+  occurredOn      DateTime?    @map("occurred_on") @db.Date
+  createdByUserId String       @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?    @map("deleted_at") @db.Timestamptz(6)
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  calculations Calculation[]
+  evidence     ActivityEvidence[]
+
+  @@index([organizationId, reportingPeriod])
+  @@index([organizationId, scope])
+  @@index([organizationId, subjectType, subjectId])
+  @@map("activity_data")
+}
+
+model ActivityEvidence {
+  organizationId String   @map("organization_id") @db.Uuid
+  activityId     String   @map("activity_id") @db.Uuid
+  evidenceId     String   @map("evidence_id") @db.Uuid
+  linkedByUserId String   @map("linked_by_user_id") @db.Uuid
+  linkedAt       DateTime @default(now()) @map("linked_at") @db.Timestamptz(6)
+
+  activity ActivityData @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  evidence Evidence     @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@id([activityId, evidenceId])
+  @@index([organizationId])
+  @@index([evidenceId])
+  @@map("activity_evidence")
+}
+
+/// Immutable. Stores every input by value and by reference so the result is
+/// reproducible from the row alone (Principle 8). Recompute => new row + supersedesId.
+model Calculation {
+  id                     String       @id @default(uuid()) @db.Uuid
+  organizationId         String       @map("organization_id") @db.Uuid
+  activityId             String       @map("activity_id") @db.Uuid
+  emissionFactorId       String       @map("emission_factor_id") @db.Uuid
+  methodology            Methodology
+  inputValue             Decimal      @map("input_value") @db.Decimal(20, 6)
+  inputUnit              String       @map("input_unit")
+  normalizedValue        Decimal      @map("normalized_value") @db.Decimal(30, 12)
+  normalizedUnit         String       @map("normalized_unit")
+  factorValue            Decimal      @map("factor_value") @db.Decimal(30, 12)
+  factorNumeratorUnit    Co2eUnit     @map("factor_numerator_unit")
+  factorDenominatorUnit  String       @map("factor_denominator_unit")
+  factorSource           String       @map("factor_source")
+  factorVersion          Int          @map("factor_version")
+  gwpSet                 String       @map("gwp_set")
+  scope                  GhgScope
+  ghgCategory            GhgCategory? @map("ghg_category")
+  reportingPeriod        String       @map("reporting_period")
+  resultValueTco2e       Decimal      @map("result_value_tco2e") @db.Decimal(20, 6)
+  assumptions            Json         @default("{}")
+  steps                  Json         @default("[]")
+  factorSelectionReasons Json         @default("[]") @map("factor_selection_reasons")
+  calculationVersion     String       @map("calculation_version")
+  supersedesId           String?      @map("supersedes_id") @db.Uuid
+  calculatedByUserId     String       @map("calculated_by_user_id") @db.Uuid
+  calculatedAt           DateTime     @default(now()) @map("calculated_at") @db.Timestamptz(6)
+  approvedByUserId       String?      @map("approved_by_user_id") @db.Uuid
+  approvedAt             DateTime?    @map("approved_at") @db.Timestamptz(6)
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  activity       ActivityData   @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  emissionFactor EmissionFactor @relation(fields: [emissionFactorId], references: [id])
+  supersedes     Calculation?   @relation("CalculationVersion", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy   Calculation[]  @relation("CalculationVersion")
+  datapoints     Datapoint[]
+
+  @@index([organizationId, scope, reportingPeriod])
+  @@index([organizationId, activityId])
+  @@map("calculation")
+}
+
+/// Rolled-up GHG-inventory total per (scope, category, period). A projection —
+/// upserted from calculations by recomputeEmissions.
+model Emission {
+  id                   String       @id @default(uuid()) @db.Uuid
+  organizationId       String       @map("organization_id") @db.Uuid
+  scope                GhgScope
+  ghgCategory          GhgCategory? @map("ghg_category")
+  reportingPeriod      String       @map("reporting_period")
+  valueTco2e           Decimal      @map("value_tco2e") @db.Decimal(20, 6)
+  calculationCount     Int          @map("calculation_count")
+  methodSummary        String       @map("method_summary")
+  sourceCalculationIds String[]     @map("source_calculation_ids") @db.Uuid
+  computedAt           DateTime     @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, scope, ghgCategory, reportingPeriod])
+  @@index([organizationId, reportingPeriod])
+  @@map("emission")
 }
 
 model DatapointEvidence {

@@ -19,6 +19,10 @@ import { StorageModule } from './modules/storage/storage.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { EvidenceModule } from './modules/evidence/evidence.module';
 import { DatapointsModule } from './modules/datapoints/datapoints.module';
+import { EmissionFactorsModule } from './modules/emission-factors/emission-factors.module';
+import { ActivityDataModule } from './modules/activity-data/activity-data.module';
+import { CalculationsModule } from './modules/calculations/calculations.module';
+import { EmissionsModule } from './modules/emissions/emissions.module';
 
 @Module({
   imports: [
@@ -35,6 +39,10 @@ import { DatapointsModule } from './modules/datapoints/datapoints.module';
     DocumentsModule,
     EvidenceModule,
     DatapointsModule,
+    EmissionFactorsModule,
+    ActivityDataModule,
+    CalculationsModule,
+    EmissionsModule,
   ],
   providers: [
     CatalogBootstrap,

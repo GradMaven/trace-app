@@ -41,6 +41,8 @@ export const PERMISSIONS = {
   // Activity data & calculations
   'activity.read': 'View activity data',
   'activity.create': 'Create activity data',
+  'activity.update': 'Edit, delete, and link evidence to activity data',
+  'emission_factor.manage': 'Create and manage organization emission factors',
   'calculation.read': 'View calculations and lineage',
   'calculation.run': 'Execute calculations',
   'calculation.approve': 'Approve calculation results',
