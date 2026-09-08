@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  # Non-secret placeholders so @trace/config validates during build/typecheck.
+  DATABASE_URL: postgresql://trace:trace@localhost:5432/trace
+  SESSION_SECRET: ci-only-session-secret-at-least-32-chars-long
+
+jobs:
+  static:
+    name: lint · typecheck · unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @trace/db exec prisma generate
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test:unit
+
+  integration:
+    name: integration (db + tenant isolation)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: trace
+          POSTGRES_PASSWORD: trace
+          POSTGRES_DB: trace
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U trace -d trace"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://trace:trace@localhost:5432/trace
+      DATABASE_URL_TEST: postgresql://trace:trace@localhost:5432/trace
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @trace/db exec prisma migrate deploy
+      - run: pnpm --filter @trace/db build
+      - run: pnpm --filter @trace/db test:integration
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build

@@ -123,6 +123,22 @@ Next.js 15 (web) · PostgreSQL 16 with RLS · Prisma · BullMQ/Redis · EU S3-co
 · Anthropic Claude behind `AIProvider` · Zod · Vitest/Testcontainers/Playwright · OTel/pino/
 Sentry.**
 
+## Implementation notes (Phase 1)
+
+- **Module system:** backend packages and `apps/api` / `apps/worker` compile to
+  **CommonJS** (`module: commonjs`, `moduleResolution: node`, no `.js` import
+  extensions). NestJS's decorator + `emitDecoratorMetadata` DI is far more reliable on
+  CJS than on NodeNext ESM, and "boring and reliable" wins here (Principle 40). `apps/web`
+  is ESM as Next.js requires. Revisit if the ecosystem's ESM-under-Nest story matures.
+- **Package manager bootstrap:** `corepack` could not write pnpm into a protected Node
+  install dir on the dev machine; pnpm 9 was installed at user scope instead
+  (`npm i -g pnpm@9`). The lockfile and `packageManager` field still pin pnpm 9.15.
+- **ESLint:** a single root `eslint .` run (flat config) is the lint gate — running
+  `eslint` per-package in parallel via Turborepo crashed on this Windows host. Module
+  boundaries are enforced with `no-restricted-imports` groups per package path.
+- **`consistent-type-imports` is disabled for `apps/api`** because it rewrites
+  constructor-injected classes to type-only imports and breaks Nest DI.
+
 ## Consequences
 
 - **Positive:** one language end to end; strong types across domain/API/UI; clean

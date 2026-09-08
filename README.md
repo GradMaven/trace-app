@@ -29,8 +29,14 @@ regulatory disclosure it supports.
 
 ## Project status
 
-**Phase 0 — Foundation.** Architecture and documentation are being established before
-significant application code. See:
+**Phase 1 — Application foundation (landed).** Monorepo, backend/domain packages, NestJS
+API, Next.js shell, Prisma schema + migrations, tenant isolation, hash-chained audit log,
+and the NordWerk demo seed. Builds, typechecks, lints, and unit tests are green; the
+Postgres-dependent integration suite (RLS / tenant isolation) runs in CI. See
+[docs/roadmap.md](docs/roadmap.md) for exact status and what's next (Phase 2 — Supplier
+Intelligence).
+
+Reference documents:
 
 - [`TRACE-INITIAL-ENGINEERING-ASSESSMENT.md`](./TRACE-INITIAL-ENGINEERING-ASSESSMENT.md) —
   current state, stack, architecture, roadmap, next steps.
@@ -81,19 +87,46 @@ packages/
 
 ## Getting started
 
-> Scaffolding lands in Phase 1. This section will carry exact commands once `apps/` and
-> `packages/` exist. Planned developer entry point:
+Prerequisites: **Node 22+**, **pnpm 9** (`npm i -g pnpm@9` if `corepack` can't install it),
+and a **PostgreSQL 16** database + **Redis** — either via Docker or hosted (EU region).
 
 ```bash
-corepack enable
 pnpm install
-docker compose up -d          # Postgres + Redis (contributors with Docker)
-pnpm db:migrate
-pnpm db:seed                   # seeds "NordWerk Manufacturing AG" demo tenant
-pnpm dev                       # web + api + worker
+cp .env.example .env          # then set DATABASE_URL (and REDIS_URL for the worker)
 ```
 
-A hosted-Postgres/Redis path (for machines without Docker) will be documented alongside.
+**With Docker:**
+
+```bash
+docker compose up -d          # Postgres + Redis; also creates trace_test
+```
+
+**Without Docker:** point `DATABASE_URL` / `DATABASE_URL_TEST` in `.env` at a hosted
+Postgres (Neon, Supabase, Railway, …) and `REDIS_URL` at a hosted Redis (Upstash, …).
+
+Then:
+
+```bash
+pnpm db:migrate               # prisma migrate deploy — schema + RLS + audit guard
+pnpm db:seed                  # seeds the "NordWerk Manufacturing AG" demo tenant
+pnpm dev                      # api (:4000), web (:3000), worker
+```
+
+Sign in at http://localhost:3000 as `anke.roth@nordwerk.example`; the magic-link URL is
+printed in the API server log (`EMAIL_TRANSPORT=console`). API docs:
+http://localhost:4000/api/v1/docs.
+
+### Checks
+
+```bash
+pnpm lint         # single root ESLint pass (flat config, enforces module boundaries)
+pnpm typecheck    # tsc --noEmit across every package
+pnpm test:unit    # Vitest unit suites (no database needed)
+pnpm build        # turbo build of all packages + apps
+# integration (needs Postgres):
+pnpm --filter @trace/db exec prisma migrate deploy
+pnpm --filter @trace/db test:integration   # tenant isolation / RLS
+```
 
 ## Principles (load-bearing)
 

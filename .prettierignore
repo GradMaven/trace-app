@@ -1,0 +1,9 @@
+node_modules
+dist
+.next
+coverage
+.turbo
+pnpm-lock.yaml
+packages/db/src/prisma-client
+**/generated
+CHANGELOG.md

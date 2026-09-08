@@ -1,0 +1,37 @@
+{
+  "name": "trace",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build --concurrency=2",
+    "dev": "turbo run dev",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "turbo run typecheck --concurrency=2",
+    "test": "turbo run test:unit --concurrency=1",
+    "test:unit": "turbo run test:unit --concurrency=1",
+    "test:integration": "turbo run test:integration --concurrency=1",
+    "check": "pnpm lint && pnpm typecheck && pnpm test:unit && pnpm build",
+    "format": "prettier --write \"**/*.{ts,tsx,js,mjs,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,json,md}\"",
+    "db:generate": "pnpm --filter @trace/db generate",
+    "db:migrate": "pnpm --filter @trace/db migrate:deploy",
+    "db:migrate:dev": "pnpm --filter @trace/db migrate:dev",
+    "db:seed": "pnpm --filter @trace/db seed",
+    "clean": "turbo run clean && rimraf node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "rimraf": "^6.0.1",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.1",
+    "vitest": "^2.1.8"
+  }
+}
