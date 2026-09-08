@@ -95,4 +95,19 @@ export class DocumentsController {
   ): Promise<void> {
     await this.documents.remove(actor.organizationId!, id, actor.userId, this.rid());
   }
+
+  @Post(':id/process')
+  @RequirePermission('document.process')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Run the AI extraction pipeline (parse → classify → extract candidates).' })
+  process(@CurrentActor() actor: AuthenticatedActor, @Param('id') id: string): Promise<unknown> {
+    return this.documents.process(actor.organizationId!, id, actor.userId, this.rid());
+  }
+
+  @Get(':id/extraction')
+  @RequirePermission('candidate.read')
+  @ApiOperation({ summary: 'Extraction state, classification, and candidate datapoints for a document.' })
+  extraction(@CurrentActor() actor: AuthenticatedActor, @Param('id') id: string): Promise<unknown> {
+    return this.documents.extraction(actor.organizationId!, id);
+  }
 }

@@ -47,9 +47,11 @@ export const PERMISSIONS = {
   'calculation.run': 'Execute calculations',
   'calculation.approve': 'Approve calculation results',
 
-  // Candidate datapoints (AI review queue)
+  // AI extraction & review queue
+  'document.process': 'Run the AI extraction pipeline on a document',
   'candidate.read': 'View AI-extracted candidate datapoints',
   'candidate.review': 'Promote or reject candidate datapoints',
+  'ai.read': 'View the AI operation log (models, tokens, cost, status)',
 
   // Compliance
   'compliance.read': 'View compliance requirements, mappings, and gaps',

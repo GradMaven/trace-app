@@ -13,10 +13,12 @@
     "clean": "rimraf dist .turbo *.tsbuildinfo"
   },
   "dependencies": {
+    "@trace/ai": "workspace:*",
     "@trace/config": "workspace:*",
     "@trace/db": "workspace:*",
     "@trace/domain": "workspace:*",
     "@trace/shared": "workspace:*",
+    "@trace/storage": "workspace:*",
     "bullmq": "^5.34.3",
     "ioredis": "^5.4.2",
     "pino": "^9.5.0"

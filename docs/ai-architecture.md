@@ -13,6 +13,25 @@
   cited context.
 - Document content is **untrusted input**; prompts treat it as data, not instructions.
 
+## Implementation status (Phase 5)
+
+- **`@trace/ai`** (pure — imports `@trace/shared` only): `AIProvider` interface,
+  `ClaudeAIProvider` (Anthropic Messages API, forced tool use, Zod-validated output),
+  `StubAIProvider` (deterministic heuristic — `provider: 'stub'`, `model:
+  'stub-heuristic@1'`, used when no `ANTHROPIC_API_KEY`; an honest fallback, not a mock),
+  `parseDocument` (deterministic pre-processing), capabilities `classifyDocument` +
+  `extractDatapoints`, versioned prompt constants with `prompts/*.md` mirrors, Zod output
+  schemas.
+- **`@trace/db`** hosts the orchestrator `runExtractionPipeline` (it is a DB-transaction
+  workflow) and `promoteCandidate` / `rejectCandidate`. It takes `fetchBytes` as an
+  argument so it need not depend on `@trace/storage`.
+- **`apps/api`** runs the pipeline synchronously (`POST /documents/:id/process`);
+  **`apps/worker`** runs the same orchestrator off a `document-processing` BullMQ queue
+  for production throughput.
+- Implemented capabilities: **Classification**, **Document Extraction**. Data Quality,
+  Evidence Reasoning, Compliance Mapping, Ask TRACE, Recommendations are later phases and
+  are absent (no stub, no fake UI).
+
 ## Capabilities (not one monolithic service)
 
 ```

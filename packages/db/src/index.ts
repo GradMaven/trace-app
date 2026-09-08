@@ -41,3 +41,11 @@ export {
   inventorySummary,
 } from './carbon';
 export type { RunCalculationArgs, RunCalculationResult } from './carbon';
+
+export { runExtractionPipeline, promoteCandidate, rejectCandidate } from './ai-pipeline';
+export type {
+  PipelineDeps,
+  RunExtractionArgs,
+  RunExtractionResult,
+  PromoteCandidateArgs,
+} from './ai-pipeline';

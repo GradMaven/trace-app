@@ -2,7 +2,8 @@ import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { pino } from 'pino';
 import { loadEnv } from '@trace/config';
-import { QUEUES, type NotificationJob } from './queues';
+import { QUEUES, type DocumentProcessingJob, type NotificationJob } from './queues';
+import { processDocument } from './processors/document-processing';
 
 const env = loadEnv();
 const log = pino({ level: env.LOG_LEVEL, name: 'worker' });
@@ -32,10 +33,30 @@ notificationsWorker.on('failed', (job, err) =>
 );
 notificationsWorker.on('error', (err) => log.warn({ err: err.message }, 'worker error'));
 
+export const documentProcessingQueue = new Queue<DocumentProcessingJob>(
+  QUEUES.documentProcessing,
+  { connection },
+);
+
+const documentWorker = new Worker<DocumentProcessingJob>(
+  QUEUES.documentProcessing,
+  async (job) => {
+    log.info({ jobId: job.id, documentId: job.data.documentId }, 'document processing started');
+    await processDocument(job);
+    log.info({ jobId: job.id, documentId: job.data.documentId }, 'document processing done');
+  },
+  { connection, concurrency: 2 },
+);
+documentWorker.on('ready', () => log.info('document-processing worker ready'));
+documentWorker.on('failed', (job, err) =>
+  log.error({ jobId: job?.id, err: err.message }, 'document processing failed'),
+);
+documentWorker.on('error', (err) => log.warn({ err: err.message }, 'document worker error'));
+
 async function shutdown(signal: string): Promise<void> {
   log.info({ signal }, 'shutting down worker');
-  await notificationsWorker.close();
-  await notificationsQueue.close();
+  await Promise.all([notificationsWorker.close(), documentWorker.close()]);
+  await Promise.all([notificationsQueue.close(), documentProcessingQueue.close()]);
   await connection.quit().catch(() => undefined);
   process.exit(0);
 }

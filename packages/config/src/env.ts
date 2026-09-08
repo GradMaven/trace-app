@@ -55,7 +55,10 @@ export const envSchema = z.object({
     .transform((v) => v === 'true' || v === '1')
     .default('true'),
 
-  // AI (Phase 5+; optional in Phase 1)
+  // AI
+  // 'auto' uses Claude when ANTHROPIC_API_KEY is set, otherwise the deterministic
+  // dev stub (heuristic extraction — clearly labelled, never presented as AI).
+  AI_PROVIDER: z.enum(['auto', 'claude', 'stub']).default('auto'),
   ANTHROPIC_API_KEY: z.string().default(''),
   AI_MODEL_EXTRACTION: z.string().default('claude-sonnet-5'),
   AI_MODEL_CLASSIFICATION: z.string().default('claude-haiku-4-5'),

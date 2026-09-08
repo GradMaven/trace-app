@@ -12,17 +12,22 @@
  *
  * Run: `pnpm db:seed`
  */
+import { createHash } from 'node:crypto';
+import { createAIProvider } from '@trace/ai';
 import { QUESTIONNAIRE_VERSION } from '@trace/domain';
+import { createStorageService, documentStorageKey } from '@trace/storage';
 import type { Prisma } from './index';
 import {
   disconnectPrisma,
   ensurePermissionCatalog,
   ensurePlatformRole,
   getPrisma,
+  promoteCandidate,
   provisionOrganization,
   recomputeEmissions,
   recomputeSupplierPassport,
   runCalculation,
+  runExtractionPipeline,
   transitionEvidence,
   withOrgContext,
   withPlatformContext,
@@ -159,7 +164,117 @@ async function main(): Promise<void> {
 
   await seedCarbon();
   console.warn('[seed] Emission factors, activity data, calculations, and FY2025 emissions created.');
+
+  await seedAiExtraction();
+  console.warn('[seed] Demo document processed through the extraction pipeline (stub provider).');
   console.warn('[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).');
+}
+
+const DEMO_REPORT_TEXT = `Rheinstahl Walzwerke GmbH — Sustainability Report 2025
+
+Prepared by Rheinstahl Walzwerke GmbH.
+Reporting year: 2025.
+
+Climate performance (FY2025)
+Our Scope 1 emissions were 128,400 tCO2e.
+Scope 2 (market-based) emissions were 41,200 tCO2e.
+Scope 2 (location-based) emissions were 47,000 tCO2e.
+Scope 3 emissions totalled 512,000 tCO2e.
+The renewable electricity share across our German sites reached 48%.
+Total energy consumption was 2,050,000 MWh.
+
+Environmental management
+All production sites are ISO 14001 certified.
+Water withdrawal was 1,240,000 m3.
+
+Targets
+We have a science-based target to reduce absolute emissions 42% by 2030 against a 2021 baseline.
+
+Occupational health and safety
+Our sites are ISO 45001 certified.
+`;
+
+async function seedAiExtraction(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const analystId = DEMO.users.analyst.id;
+
+  const buffer = Buffer.from(DEMO_REPORT_TEXT, 'utf8');
+  const checksum = createHash('sha256').update(buffer).digest('hex');
+  const filename = '2025 Sustainability Report.txt';
+  const storageKey = documentStorageKey({ organizationId: orgId, checksumSha256: checksum, filename });
+
+  const storage = createStorageService({
+    driver: 'local',
+    dir: process.env.STORAGE_LOCAL_DIR ?? '.data/documents',
+    signingSecret: process.env.STORAGE_SIGNING_SECRET ?? 'dev-only-storage-signing-secret-change-me',
+    apiPublicUrl: process.env.API_PUBLIC_URL ?? 'http://localhost:4000',
+  });
+  await storage.put({ key: storageKey, body: buffer, contentType: 'text/plain', checksumSha256: checksum });
+
+  const provider = createAIProvider({
+    mode: 'stub',
+    extractionModel: 'claude-sonnet-5',
+    classificationModel: 'claude-haiku-4-5',
+  });
+
+  await withOrgContext(orgId, async (db) => {
+    const rheinstahl = await db.supplier.findFirst({
+      where: { organizationId: orgId, name: SUPPLIER_ROWS[0]!.name },
+    });
+
+    const doc = await db.document.create({
+      data: {
+        organizationId: orgId,
+        filename,
+        mime: 'text/plain',
+        sizeBytes: buffer.byteLength,
+        checksumSha256: checksum,
+        storageKey,
+        storageDriver: storage.driver,
+        processingStatus: 'received',
+        scanStatus: 'skipped',
+        uploadedByUserId: analystId,
+      },
+    });
+
+    const result = await runExtractionPipeline(
+      db,
+      { provider, fetchBytes: async () => buffer },
+      { organizationId: orgId, documentId: doc.id, actorUserId: analystId, requestId: 'seed' },
+    );
+
+    // Promote two candidates so the review queue and datapoints look alive.
+    const promoteKeys = ['scope1_tco2e', 'renewable_electricity_pct'];
+    const candidates = await db.candidateDatapoint.findMany({
+      where: { documentId: doc.id, status: 'pending', metricKey: { in: promoteKeys } },
+    });
+    for (const c of candidates) {
+      await promoteCandidate(db, {
+        organizationId: orgId,
+        candidateId: c.id,
+        actorUserId: analystId,
+        subjectType: rheinstahl ? 'supplier' : 'organization',
+        subjectId: rheinstahl?.id ?? orgId,
+        requestId: 'seed',
+      });
+    }
+
+    await writeAuditLog(db, {
+      organizationId: orgId,
+      actorId: analystId,
+      action: 'seed.ai_extraction_completed',
+      resourceType: 'document',
+      resourceId: doc.id,
+      before: null,
+      after: {
+        candidates: result.candidateCount,
+        promoted: candidates.length,
+        provider: 'stub',
+        demo: true,
+      },
+      requestId: 'seed',
+    });
+  });
 }
 
 const LIBRARY_FACTORS: Array<{

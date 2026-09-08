@@ -29,18 +29,19 @@ regulatory disclosure it supports.
 
 ## Project status
 
-**Phase 4 — Carbon Engine (landed).** On top of Phases 1–3: a **deterministic calculation
-engine** in `@trace/domain` (exact decimal unit conversion, `computeEmission` storing every
-step, `recompute` that reproduces a result bit-for-bit, explainable emission-factor
-selection, Scope 1/2/3 aggregation with location- vs market-based Scope 2); versioned
-**emission factors** (shared library + org-specific), **activity data** linked to evidence,
-**immutable calculations** with full lineage, and an **emission** rollup projection. Web
-adds Activity Data, Calculations, Scope 1/2/3 views, the Emission Factor library, and the
-**calculation lineage** page; the Command Center now shows real Scope 1/2/3 totals. Builds,
-typechecks, lints, and 79 unit tests are green; the Postgres-dependent integration suites
-(RLS / tenant isolation, supplier flow, evidence flow, carbon flow) run in CI. See
-[docs/roadmap.md](docs/roadmap.md) for exact status and what's next (Phase 5 — AI Document
-Intelligence).
+**Phase 5 — AI Document Intelligence (landed).** On top of Phases 1–4: the `@trace/ai`
+package with an `AIProvider` interface, a **Claude adapter** (forced tool use,
+Zod-validated structured output, token/cost accounting) and a deterministic **dev stub**
+(heuristic extraction, clearly labelled — used when no API key is set). A document
+extraction pipeline (deterministic parse → classify → extract) records **every model call
+as an `ai_job`** before its output is used, and writes only to `candidate_datapoint` — a
+human with `candidate.review` **promotes** each candidate to a real datapoint backed by
+evidence from the source document, or rejects it. Web adds the Review Queue (with the
+source span highlighted in the parsed context) and an AI Log. Builds, typechecks, lints,
+and 89 unit tests are green; the Postgres-dependent integration suites (RLS / tenant
+isolation, supplier flow, evidence flow, carbon flow, AI extraction flow) run in CI. See
+[docs/roadmap.md](docs/roadmap.md) for exact status and what's next (Phase 6 — Trust
+Engine).
 
 Reference documents:
 

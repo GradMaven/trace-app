@@ -16,8 +16,10 @@ export const NAV: NavSection[] = [
     items: [
       { label: 'Evidence', href: '/data/evidence', ready: true },
       { label: 'Documents', href: '/data/documents', ready: true },
+      { label: 'Review Queue', href: '/data/candidates', ready: true },
       { label: 'Activity Data', href: '/data/activity', ready: true },
       { label: 'Calculations', href: '/data/calculations', ready: true },
+      { label: 'AI Log', href: '/data/ai-jobs', ready: true },
       { label: 'Data Quality', href: '/data/quality' },
     ],
   },

@@ -17,6 +17,7 @@
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/swagger": "^11.0.2",
+    "@trace/ai": "workspace:*",
     "@trace/config": "workspace:*",
     "@trace/db": "workspace:*",
     "@trace/domain": "workspace:*",

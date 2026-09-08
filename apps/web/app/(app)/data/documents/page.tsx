@@ -1,4 +1,5 @@
 import { serverFetch } from '@/lib/server-api';
+import { ProcessButton } from './process-client';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,6 +37,7 @@ export default async function DocumentsPage() {
               <th>Scan</th>
               <th>Storage</th>
               <th>Checksum</th>
+              <th />
             </tr>
           </thead>
           <tbody>
@@ -51,11 +53,14 @@ export default async function DocumentsPage() {
                 <td className="mono muted" title={d.checksumSha256}>
                   {d.checksumSha256.slice(0, 12)}…
                 </td>
+                <td style={{ textAlign: 'right' }}>
+                  <ProcessButton documentId={d.id} />
+                </td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="muted">
+                <td colSpan={7} className="muted">
                   No documents yet.
                 </td>
               </tr>

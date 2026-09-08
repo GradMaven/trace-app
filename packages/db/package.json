@@ -30,11 +30,13 @@
   },
   "dependencies": {
     "@prisma/client": "^6.1.0",
+    "@trace/ai": "workspace:*",
     "@trace/domain": "workspace:*",
     "@trace/shared": "workspace:*",
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@trace/storage": "workspace:*",
     "prisma": "^6.1.0",
     "rimraf": "^6.0.1",
     "tsx": "^4.19.2",

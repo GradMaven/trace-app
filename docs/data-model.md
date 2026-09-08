@@ -292,6 +292,44 @@ emission(id, organization_id, scope, ghg_category NULL, reporting_period, value_
   `@trace/domain` unit registry is the single source of truth, exposed via
   `GET /emission-factors/units`.
 
+### AI document intelligence (Phase 5)
+
+```
+ai_job(id, organization_id, capability, provider, model, prompt_version, input_type,
+       input_ref, document_id NULL, status ai_job_status, output jsonb, confidence numeric(5,2),
+       tokens_in, tokens_out, cost_eur numeric(12,6), latency_ms, reviewer_id NULL, error,
+       created_at, completed_at)
+document_extraction(id, organization_id, document_id UNIQUE, status extraction_status,
+                    parser, parsed_text, page_count, truncated, classification jsonb,
+                    ai_job_ids uuid[], candidate_count, error)
+candidate_datapoint(id, organization_id, document_id, extraction_id NULL, ai_job_id NULL,
+                    metric_key, label, value_numeric numeric(20,6), value_text, unit,
+                    reporting_period, provenance_guess provenance, confidence numeric(5,2),
+                    source_spans jsonb, rationale, status candidate_status,
+                    promoted_datapoint_id NULL, reviewed_by_user_id NULL, reviewed_at,
+                    review_note)
+```
+
+- **`@trace/ai`** provides `AIProvider` (`extractStructured`), a **Claude adapter**
+  (forced tool use → JSON matching a hand-written schema → re-validated with Zod → thrown
+  on failure) and a **deterministic dev stub** (`provider: 'stub'`, `model:
+  'stub-heuristic@1'`) used when no `ANTHROPIC_API_KEY` is set. Prompts are versioned
+  constants (`prompts/*.md` mirror them). `parseDocument` does deterministic
+  pre-processing (text/csv native, PDF via `pdf-parse`).
+- **Every model / stub call is an `ai_job` row**, written *before* the output is used
+  (ADR-005). Recorded: capability, provider, model, prompt version, tokens, cost, latency,
+  status, and the reviewer who later acts on it.
+- The `@trace/db` orchestrator `runExtractionPipeline` runs parse → classify → extract and
+  writes `candidate_datapoint` rows (status `pending`) with `source_spans` located in the
+  parsed text. **Nothing here writes trusted data.**
+- `promoteCandidate` (permission `candidate.review`) creates a `datapoint`
+  (`label = human_reviewed`), ensures an `evidence` row backed by the source `document`
+  (`status = extracted`), links datapoint ↔ evidence, and marks the candidate `promoted`.
+  `rejectCandidate` marks it `rejected`. `ai_extracted → verified` automatically is never
+  possible.
+- RLS (`FORCE`, `current_org()`) on `ai_job`, `document_extraction`, `candidate_datapoint`
+  — migration `0010_ai_rls`.
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

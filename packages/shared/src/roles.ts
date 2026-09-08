@@ -30,6 +30,7 @@ export interface RoleDefinition {
 }
 
 const READ_ONLY_SUSTAINABILITY: Permission[] = [
+  'ai.read',
   'organization.read',
   'member.read',
   'role.read',
@@ -86,8 +87,10 @@ export const ROLE_DEFINITIONS: Record<RoleKey, RoleDefinition> = {
       'calculation.read',
       'calculation.run',
       'calculation.approve',
+      'document.process',
       'candidate.read',
       'candidate.review',
+      'ai.read',
       'compliance.read',
       'compliance.manage',
       'audit.read',
@@ -118,8 +121,10 @@ export const ROLE_DEFINITIONS: Record<RoleKey, RoleDefinition> = {
       'emission_factor.manage',
       'calculation.read',
       'calculation.run',
+      'document.process',
       'candidate.read',
       'candidate.review',
+      'ai.read',
       'compliance.read',
       'report.generate',
     ],

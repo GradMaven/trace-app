@@ -2,10 +2,18 @@ import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { loadEnv } from '@trace/config';
 import { AppError, page, type Page } from '@trace/shared';
-import { withOrgContext, writeAuditLog, type TenantDb } from '@trace/db';
+import {
+  runExtractionPipeline,
+  withOrgContext,
+  writeAuditLog,
+  type RunExtractionResult,
+  type TenantDb,
+} from '@trace/db';
 import { documentStorageKey, type StorageService } from '@trace/storage';
+import type { AIProvider } from '@trace/ai';
 import { STORAGE_SERVICE } from '../storage/storage.module';
 import { ScanService } from '../storage/scan.service';
+import { AI_PROVIDER } from '../ai/ai.module';
 
 export interface UploadedFile {
   originalname: string;
@@ -53,6 +61,7 @@ export class DocumentsService {
 
   constructor(
     @Inject(STORAGE_SERVICE) private readonly storage: StorageService,
+    @Inject(AI_PROVIDER) private readonly aiProvider: AIProvider,
     private readonly scanner: ScanService,
   ) {}
 
@@ -224,6 +233,68 @@ export class DocumentsService {
         after: null,
         requestId,
       });
+    });
+  }
+
+  /**
+   * Run the AI extraction pipeline on a document. Synchronous here for
+   * predictable dev/CI behaviour; the worker consumes the same pipeline via a
+   * queue for production throughput.
+   */
+  async process(
+    organizationId: string,
+    id: string,
+    actorUserId: string,
+    requestId: string,
+  ): Promise<RunExtractionResult> {
+    return withOrgContext(organizationId, (db) =>
+      runExtractionPipeline(
+        db,
+        {
+          provider: this.aiProvider,
+          fetchBytes: (key) => this.storage.get(key),
+        },
+        { organizationId, documentId: id, actorUserId, requestId },
+      ),
+    );
+  }
+
+  async extraction(organizationId: string, id: string): Promise<unknown> {
+    return withOrgContext(organizationId, async (db) => {
+      const doc = await this.loadOrThrow(db, organizationId, id);
+      const extraction = await db.documentExtraction.findUnique({
+        where: { documentId: doc.id },
+      });
+      if (!extraction) {
+        return { documentId: doc.id, status: 'not_started', candidateCount: 0, candidates: [] };
+      }
+      const candidates = await db.candidateDatapoint.findMany({
+        where: { documentId: doc.id },
+        orderBy: [{ status: 'asc' }, { confidence: 'desc' }],
+      });
+      return {
+        documentId: doc.id,
+        status: extraction.status,
+        parser: extraction.parser,
+        pageCount: extraction.pageCount,
+        truncated: extraction.truncated,
+        classification: extraction.classification,
+        aiJobIds: extraction.aiJobIds,
+        error: extraction.error,
+        candidateCount: extraction.candidateCount,
+        candidates: candidates.map((c) => ({
+          id: c.id,
+          metricKey: c.metricKey,
+          label: c.label,
+          value: c.valueNumeric?.toString() ?? c.valueText,
+          unit: c.unit,
+          reportingPeriod: c.reportingPeriod,
+          provenanceGuess: c.provenanceGuess,
+          confidence: c.confidence.toString(),
+          status: c.status,
+          rationale: c.rationale,
+        })),
+      };
     });
   }
 

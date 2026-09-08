@@ -115,6 +115,7 @@ model Organization {
   activityData    ActivityData[]
   calculations    Calculation[]
   emissions       Emission[]
+  aiJobs          AiJob[]
 
   @@map("organization")
 }
@@ -536,6 +537,9 @@ model Document {
   organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   evidence     Evidence[]
   supplierRefs SupplierEvidenceRef[]
+  extraction   DocumentExtraction?
+  candidates   CandidateDatapoint[]
+  aiJobs       AiJob[]
 
   @@index([organizationId, createdAt])
   @@index([organizationId, checksumSha256])
@@ -599,9 +603,10 @@ model Datapoint {
   createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  calculation  Calculation?        @relation(fields: [calculationId], references: [id], onDelete: SetNull)
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  calculation  Calculation?         @relation(fields: [calculationId], references: [id], onDelete: SetNull)
   evidence     DatapointEvidence[]
+  promotedFrom CandidateDatapoint[]
 
   @@index([organizationId, subjectType, subjectId])
   @@index([organizationId, metricKey])
@@ -858,4 +863,125 @@ model SupplierPassport {
   @@unique([supplierId, version])
   @@index([organizationId, supplierId])
   @@map("supplier_passport")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 — AI Document Intelligence
+// ---------------------------------------------------------------------------
+
+enum AiJobStatus {
+  queued
+  running
+  completed
+  failed
+
+  @@map("ai_job_status")
+}
+
+enum ExtractionStatus {
+  pending
+  parsing
+  parsed
+  classifying
+  extracting
+  ready_for_review
+  failed
+
+  @@map("extraction_status")
+}
+
+enum CandidateStatus {
+  pending
+  promoted
+  rejected
+
+  @@map("candidate_status")
+}
+
+/// One recorded AI (or dev-stub) call. Written before the output is used (ADR-005).
+model AiJob {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizationId String      @map("organization_id") @db.Uuid
+  capability     String
+  provider       String
+  model          String
+  promptVersion  String      @map("prompt_version")
+  inputType      String      @map("input_type")
+  inputRef       String      @map("input_ref")
+  documentId     String?     @map("document_id") @db.Uuid
+  status         AiJobStatus @default(running)
+  output         Json?
+  confidence     Decimal?    @db.Decimal(5, 2)
+  tokensIn       Int         @default(0) @map("tokens_in")
+  tokensOut      Int         @default(0) @map("tokens_out")
+  costEur        Decimal     @default(0) @map("cost_eur") @db.Decimal(12, 6)
+  latencyMs      Int         @default(0) @map("latency_ms")
+  reviewerId     String?     @map("reviewer_id") @db.Uuid
+  error          String?
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt    DateTime?   @map("completed_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document     Document?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, capability])
+  @@map("ai_job")
+}
+
+/// The parsed artifact + pipeline state for one document.
+model DocumentExtraction {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  documentId     String           @unique @map("document_id") @db.Uuid
+  status         ExtractionStatus @default(pending)
+  parser         String?
+  parsedText     String?          @map("parsed_text")
+  pageCount      Int?             @map("page_count")
+  truncated      Boolean          @default(false)
+  classification Json?
+  aiJobIds       String[]         @map("ai_job_ids") @db.Uuid
+  candidateCount Int              @default(0) @map("candidate_count")
+  error          String?
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@map("document_extraction")
+}
+
+/// An AI-proposed datapoint awaiting human review. Never used in trusted
+/// reporting; a reviewer with `candidate.review` promotes it to a Datapoint
+/// (or rejects it). ADR-005.
+model CandidateDatapoint {
+  id                  String          @id @default(uuid()) @db.Uuid
+  organizationId      String          @map("organization_id") @db.Uuid
+  documentId          String          @map("document_id") @db.Uuid
+  extractionId        String?         @map("extraction_id") @db.Uuid
+  aiJobId             String?         @map("ai_job_id") @db.Uuid
+  metricKey           String          @map("metric_key")
+  label               String
+  valueNumeric        Decimal?        @map("value_numeric") @db.Decimal(20, 6)
+  valueText           String?         @map("value_text")
+  unit                String?
+  reportingPeriod     String?         @map("reporting_period")
+  provenanceGuess     Provenance      @default(supplier_reported) @map("provenance_guess")
+  confidence          Decimal         @db.Decimal(5, 2)
+  sourceSpans         Json            @default("[]") @map("source_spans")
+  rationale           String?
+  status              CandidateStatus @default(pending)
+  promotedDatapointId String?         @map("promoted_datapoint_id") @db.Uuid
+  reviewedByUserId    String?         @map("reviewed_by_user_id") @db.Uuid
+  reviewedAt          DateTime?       @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote          String?         @map("review_note")
+  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  document          Document   @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  promotedDatapoint Datapoint? @relation(fields: [promotedDatapointId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([organizationId, documentId])
+  @@map("candidate_datapoint")
 }
