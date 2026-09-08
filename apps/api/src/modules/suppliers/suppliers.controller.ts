@@ -141,6 +141,24 @@ export class SuppliersController {
     });
   }
 
+  @Post(':id/evidence-refs/:refId/promote')
+  @RequirePermission('evidence.create')
+  @HttpCode(201)
+  @ApiOperation({ summary: 'Promote a supplier-submitted evidence reference into an Evidence record.' })
+  promoteRef(
+    @CurrentActor() actor: AuthenticatedActor,
+    @Param('id') id: string,
+    @Param('refId') refId: string,
+  ): Promise<{ evidenceId: string }> {
+    return this.suppliers.promoteEvidenceRef(
+      actor.organizationId!,
+      id,
+      refId,
+      actor.userId,
+      this.rid(),
+    );
+  }
+
   @Post(':id/passport/recompute')
   @RequirePermission('supplier.update')
   @HttpCode(200)

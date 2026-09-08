@@ -36,8 +36,11 @@ apps/
   worker/     BullMQ worker; same domain services, triggered by queue
 packages/
   domain/     Pure TypeScript, zero I/O. Calculation engine, unit conversion, Trust Score,
-              data-quality rules, compliance mapping evaluation. 100% unit-testable.
+              data-quality rules, compliance mapping evaluation, evidence lifecycle state
+              machine. 100% unit-testable.
   db/         Prisma schema, migrations, seed, repository base class + tenant scoping helpers
+  storage/    StorageService interface + local-disk and S3-compatible drivers; signed
+              download URLs; content-addressed document keys
   ai/         AIProvider interface, Claude adapter, prompt templates (versioned), Zod
               output schemas, AIJob recording
   compliance/ Versioned regulatory rule store (ESRS first), loaders, mapping evaluator

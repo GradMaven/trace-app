@@ -21,6 +21,7 @@ import {
   getPrisma,
   provisionOrganization,
   recomputeSupplierPassport,
+  transitionEvidence,
   withOrgContext,
   withPlatformContext,
   writeAuditLog,
@@ -150,7 +151,151 @@ async function main(): Promise<void> {
 
   await seedSuppliers();
   console.warn('[seed] Suppliers, relationships, questionnaires, and passports created.');
+
+  await seedEvidence();
+  console.warn('[seed] Evidence records and linked datapoints created.');
   console.warn('[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).');
+}
+
+async function seedEvidence(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const adminId = DEMO.users.admin.id;
+  const analystId = DEMO.users.analyst.id;
+
+  await withOrgContext(orgId, async (db) => {
+    const rheinstahl = await db.supplier.findFirst({
+      where: { organizationId: orgId, name: SUPPLIER_ROWS[0]!.name },
+    });
+    const nordicBearings = await db.supplier.findFirst({
+      where: { organizationId: orgId, name: 'Nordic Bearings AB' },
+    });
+    if (!rheinstahl || !nordicBearings) return;
+
+    // Promote Rheinstahl's supplier-submitted report into an Evidence record.
+    const ref = await db.supplierEvidenceRef.findFirst({
+      where: { organizationId: orgId, supplierId: rheinstahl.id },
+    });
+
+    const report = await db.evidence.create({
+      data: {
+        organizationId: orgId,
+        type: 'supplier_report',
+        title: 'Rheinstahl Sustainability Report 2025',
+        source: 'supplier_portal',
+        reportingPeriod: 'FY2025',
+        issuer: 'Rheinstahl Walzwerke GmbH',
+        hash: 'seed-evidence-rheinstahl-report-2025',
+        metadata: { supplierId: rheinstahl.id, demo: true } as Prisma.InputJsonValue,
+        status: 'uploaded',
+        uploadedByUserId: adminId,
+      },
+    });
+    if (ref) {
+      await db.supplierEvidenceRef.update({
+        where: { id: ref.id },
+        data: { promotedEvidenceId: report.id, verified: true },
+      });
+    }
+
+    const cert = await db.evidence.create({
+      data: {
+        organizationId: orgId,
+        type: 'certificate',
+        title: 'Nordic Bearings — ISO 14001 certificate',
+        source: 'manual',
+        reportingPeriod: 'FY2025',
+        issuer: 'DNV',
+        hash: 'seed-evidence-nordic-iso14001',
+        metadata: { supplierId: nordicBearings.id, demo: true } as Prisma.InputJsonValue,
+        status: 'uploaded',
+        uploadedByUserId: analystId,
+      },
+    });
+
+    // Move both through the lifecycle to "verified".
+    for (const ev of [report, cert]) {
+      await transitionEvidence(db, {
+        organizationId: orgId,
+        evidenceId: ev.id,
+        to: 'reviewed',
+        actorUserId: analystId,
+        permissions: ['evidence.update'],
+        requestId: 'seed',
+      });
+      await transitionEvidence(db, {
+        organizationId: orgId,
+        evidenceId: ev.id,
+        to: 'verified',
+        actorUserId: DEMO.users.auditor.id,
+        permissions: ['evidence.verify'],
+        method: 'document_review',
+        note: 'Seed verification.',
+        requestId: 'seed',
+      });
+    }
+
+    // Datapoints backed by the verified evidence.
+    const dp1 = await db.datapoint.create({
+      data: {
+        organizationId: orgId,
+        metricKey: 'scope1_tco2e',
+        valueNumeric: 128_400,
+        unit: 'tCO2e',
+        provenance: 'supplier_reported',
+        label: 'verified',
+        reportingPeriod: 'FY2025',
+        subjectType: 'supplier',
+        subjectId: rheinstahl.id,
+        createdByUserId: analystId,
+      },
+    });
+    const dp2 = await db.datapoint.create({
+      data: {
+        organizationId: orgId,
+        metricKey: 'renewable_electricity_pct',
+        valueNumeric: 48,
+        unit: '%',
+        provenance: 'supplier_reported',
+        label: 'human_reviewed',
+        reportingPeriod: 'FY2025',
+        subjectType: 'supplier',
+        subjectId: rheinstahl.id,
+        createdByUserId: analystId,
+      },
+    });
+    const dp3 = await db.datapoint.create({
+      data: {
+        organizationId: orgId,
+        metricKey: 'iso14001_certified',
+        valueText: 'true',
+        provenance: 'supplier_reported',
+        label: 'verified',
+        reportingPeriod: 'FY2025',
+        subjectType: 'supplier',
+        subjectId: nordicBearings.id,
+        createdByUserId: analystId,
+      },
+    });
+
+    await db.datapointEvidence.createMany({
+      data: [
+        { organizationId: orgId, datapointId: dp1.id, evidenceId: report.id, linkedByUserId: analystId },
+        { organizationId: orgId, datapointId: dp2.id, evidenceId: report.id, linkedByUserId: analystId },
+        { organizationId: orgId, datapointId: dp3.id, evidenceId: cert.id, linkedByUserId: analystId },
+      ],
+    });
+
+    await writeAuditLog(db, {
+      organizationId: orgId,
+      actorId: adminId,
+      action: 'seed.evidence_completed',
+      resourceType: 'organization',
+      resourceId: orgId,
+      before: null,
+      after: { evidence: 2, datapoints: 3, verified: 2, demo: true },
+      requestId: 'seed',
+    });
+  });
 }
 
 const SUPPLIER_ROWS: Array<{

@@ -2,7 +2,6 @@
   "name": "@trace/api",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "build": "tsc -p tsconfig.build.json",
@@ -22,6 +21,7 @@
     "@trace/db": "workspace:*",
     "@trace/domain": "workspace:*",
     "@trace/shared": "workspace:*",
+    "@trace/storage": "workspace:*",
     "cookie-parser": "^1.4.7",
     "helmet": "^8.0.0",
     "nanoid": "^5.0.9",

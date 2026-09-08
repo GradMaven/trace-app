@@ -15,6 +15,10 @@ import { RolesModule } from './modules/roles/roles.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { SupplierPortalModule } from './modules/supplier-portal/supplier-portal.module';
+import { StorageModule } from './modules/storage/storage.module';
+import { DocumentsModule } from './modules/documents/documents.module';
+import { EvidenceModule } from './modules/evidence/evidence.module';
+import { DatapointsModule } from './modules/datapoints/datapoints.module';
 
 @Module({
   imports: [
@@ -27,6 +31,10 @@ import { SupplierPortalModule } from './modules/supplier-portal/supplier-portal.
     AuditLogModule,
     SuppliersModule,
     SupplierPortalModule,
+    StorageModule,
+    DocumentsModule,
+    EvidenceModule,
+    DatapointsModule,
   ],
   providers: [
     CatalogBootstrap,

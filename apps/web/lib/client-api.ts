@@ -24,3 +24,19 @@ export async function clientFetch<T>(path: string, init: RequestInit = {}): Prom
   });
   return parseResult<T>(res);
 }
+
+/** Multipart upload — lets the browser set the multipart content-type/boundary. */
+export async function clientUpload<T>(path: string, form: FormData): Promise<ApiResult<T>> {
+  const csrf = readCookie('trace_csrf');
+  const orgId = readCookie('trace_active_org');
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+    headers: {
+      ...(csrf ? { 'x-trace-csrf': csrf } : {}),
+      ...(orgId ? { 'x-organization-id': orgId } : {}),
+    },
+  });
+  return parseResult<T>(res);
+}

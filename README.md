@@ -29,14 +29,16 @@ regulatory disclosure it supports.
 
 ## Project status
 
-**Phase 2 — Supplier Intelligence (landed).** On top of the Phase 1 foundation: supplier
-directory + detail, contacts/locations/relationship, supplier-portal-user invitations, the
-supplier portal (fill & submit a sustainability questionnaire, share evidence), and the
-versioned **Supplier Passport** — a provenance-tagged snapshot recomputed from the
-submitted questionnaire. NordWerk seed now has 20 suppliers. Builds, typechecks, lints, and
-43 unit tests are green; the Postgres-dependent integration suites (RLS / tenant isolation,
-supplier flow) run in CI. See [docs/roadmap.md](docs/roadmap.md) for exact status and
-what's next (Phase 3 — Evidence Infrastructure).
+**Phase 3 — Evidence Infrastructure (landed).** On top of Phases 1–2: the `@trace/storage`
+package (local-disk + S3 drivers, signed download URLs), document upload (MIME + magic-byte
+validation, SHA-256, content-addressed dedupe, malware-scan hook), first-class **Evidence**
+records with a lifecycle state machine (uploaded → reviewed → verified, versioned via
+supersession), **Datapoints** and datapoint↔evidence linking, an evidence viewer and an
+Evidence-DNA datapoint page, and promotion of supplier-submitted evidence into first-class
+records. Builds, typechecks, lints, and 54 unit tests are green; the Postgres-dependent
+integration suites (RLS / tenant isolation, supplier flow, evidence flow) run in CI. See
+[docs/roadmap.md](docs/roadmap.md) for exact status and what's next (Phase 4 — Carbon
+Engine).
 
 Reference documents:
 

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { AppError, page, type Page } from '@trace/shared';
 import { withOrgContext, writeAuditLog, type TenantDb } from '@trace/db';
@@ -124,6 +125,8 @@ export class SuppliersService {
           sourceUrl: e.sourceUrl,
           reportingPeriod: e.reportingPeriod,
           verified: e.verified,
+          documentId: e.documentId,
+          promotedEvidenceId: e.promotedEvidenceId,
           createdAt: e.createdAt.toISOString(),
         })),
         passport: passport
@@ -342,6 +345,66 @@ export class SuppliersService {
         requestId,
       });
       return { id: l.id };
+    });
+  }
+
+  /** Promote a supplier-submitted evidence reference into a first-class Evidence record. */
+  async promoteEvidenceRef(
+    organizationId: string,
+    supplierId: string,
+    refId: string,
+    actorUserId: string,
+    requestId: string,
+  ): Promise<{ evidenceId: string }> {
+    return withOrgContext(organizationId, async (db) => {
+      const ref = await db.supplierEvidenceRef.findFirst({
+        where: { id: refId, organizationId, supplierId },
+        include: { document: { select: { checksumSha256: true } } },
+      });
+      if (!ref) throw AppError.notFound('evidence_ref.not_found', 'Evidence reference not found.');
+      if (ref.promotedEvidenceId) {
+        throw AppError.conflict('evidence_ref.already_promoted', 'This reference is already promoted.');
+      }
+
+      const hash = createHash('sha256')
+        .update(
+          `${ref.type}|${ref.document?.checksumSha256 ?? ref.sourceUrl ?? ''}|${ref.reportingPeriod ?? ''}`,
+        )
+        .digest('hex');
+
+      const evidence = await db.evidence.create({
+        data: {
+          organizationId,
+          type: ref.type,
+          title: ref.title,
+          documentId: ref.documentId,
+          source: 'supplier_portal',
+          sourceUrl: ref.sourceUrl,
+          reportingPeriod: ref.reportingPeriod,
+          hash,
+          metadata: { supplierId, supplierEvidenceRefId: ref.id },
+          status: 'uploaded',
+          uploadedByUserId: actorUserId,
+        },
+      });
+
+      await db.supplierEvidenceRef.update({
+        where: { id: ref.id },
+        data: { promotedEvidenceId: evidence.id },
+      });
+
+      await writeAuditLog(db, {
+        organizationId,
+        actorId: actorUserId,
+        action: 'supplier.evidence_ref_promoted',
+        resourceType: 'evidence',
+        resourceId: evidence.id,
+        before: { supplierEvidenceRefId: ref.id },
+        after: { evidenceId: evidence.id, type: ref.type },
+        requestId,
+      });
+
+      return { evidenceId: evidence.id };
     });
   }
 

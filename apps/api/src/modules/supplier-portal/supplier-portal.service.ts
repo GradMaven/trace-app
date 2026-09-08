@@ -21,6 +21,7 @@ export interface AddEvidenceInput {
   note?: string;
   reportingPeriod?: string;
   requestId?: string;
+  documentId?: string;
 }
 
 @Injectable()
@@ -244,11 +245,19 @@ export class SupplierPortalService {
       if (input.requestId) {
         await this.requestOrThrow(db, organizationId, supplierId, input.requestId);
       }
+      if (input.documentId) {
+        const doc = await db.document.findFirst({
+          where: { id: input.documentId, organizationId },
+          select: { id: true },
+        });
+        if (!doc) throw AppError.unprocessable('evidence.document_not_found', 'Document not found.');
+      }
       const row = await db.supplierEvidenceRef.create({
         data: {
           organizationId,
           supplierId,
           requestId: input.requestId ?? null,
+          documentId: input.documentId ?? null,
           type: input.type as never,
           title: input.title,
           sourceUrl: input.sourceUrl ?? null,

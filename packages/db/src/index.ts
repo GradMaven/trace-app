@@ -29,3 +29,6 @@ export type { ProvisionOrganizationInput, ProvisionedOrganization } from './prov
 
 export { recomputeSupplierPassport } from './supplier';
 export type { RecomputePassportArgs, RecomputedPassport } from './supplier';
+
+export { transitionEvidence, supersedeEvidence } from './evidence';
+export type { TransitionEvidenceArgs, SupersedeEvidenceArgs } from './evidence';

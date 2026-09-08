@@ -14,6 +14,7 @@ export const envSchema = z.object({
 
   // API
   API_PORT: z.coerce.number().int().positive().default(4000),
+  API_PUBLIC_URL: z.string().url().default('http://localhost:4000'),
   WEB_ORIGIN: z.string().url().default('http://localhost:3000'),
   SESSION_SECRET: z
     .string()
@@ -29,12 +30,30 @@ export const envSchema = z.object({
   // Redis
   REDIS_URL: z.string().url().default('redis://localhost:6379'),
 
-  // Object storage (S3-compatible, EU)
+  // Object storage
+  STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
+  STORAGE_LOCAL_DIR: z.string().default('.data/documents'),
+  // HMAC secret for local signed download URLs (dev). 16+ chars.
+  STORAGE_SIGNING_SECRET: z
+    .string()
+    .min(16)
+    .default('dev-only-storage-signing-secret-change-me'),
+  DOCUMENT_MAX_BYTES: z.coerce.number().int().positive().default(26_214_400), // 25 MiB
+  DOCUMENT_ALLOWED_MIME: z
+    .string()
+    .default(
+      'application/pdf,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg',
+    ),
+  // S3-compatible object storage (used when STORAGE_DRIVER=s3), EU region.
   STORAGE_ENDPOINT: z.string().url().optional().or(z.literal('')).default(''),
   STORAGE_REGION: z.string().default('eu-central-1'),
   STORAGE_BUCKET: z.string().default('trace-dev'),
   STORAGE_ACCESS_KEY_ID: z.string().default(''),
   STORAGE_SECRET_ACCESS_KEY: z.string().default(''),
+  STORAGE_FORCE_PATH_STYLE: z
+    .string()
+    .transform((v) => v === 'true' || v === '1')
+    .default('true'),
 
   // AI (Phase 5+; optional in Phase 1)
   ANTHROPIC_API_KEY: z.string().default(''),

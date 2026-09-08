@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { clientFetch } from '@/lib/client-api';
+import { clientFetch, clientUpload } from '@/lib/client-api';
 
 const TYPES = [
   'supplier_report',
@@ -35,6 +35,7 @@ export function EvidenceClient({
   error: string | null;
 }) {
   const router = useRouter();
+  const fileRef = useRef<HTMLInputElement>(null);
   const [type, setType] = useState('supplier_report');
   const [title, setTitle] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
@@ -47,10 +48,26 @@ export function EvidenceClient({
     e.preventDefault();
     setBusy(true);
     setMsg(null);
+
+    let documentId: string | undefined;
+    const file = fileRef.current?.files?.[0];
+    if (file) {
+      const form = new FormData();
+      form.append('file', file);
+      const up = await clientUpload<{ id: string }>('/documents', form);
+      if (!up.ok || !up.data) {
+        setBusy(false);
+        setMsg(up.error?.message ?? 'Upload failed.');
+        return;
+      }
+      documentId = up.data.id;
+    }
+
     const body: Record<string, unknown> = { type, title };
     if (sourceUrl) body.sourceUrl = sourceUrl;
     if (reportingPeriod) body.reportingPeriod = reportingPeriod;
     if (note) body.note = note;
+    if (documentId) body.documentId = documentId;
     const res = await clientFetch('/supplier-portal/evidence', {
       method: 'POST',
       body: JSON.stringify(body),
@@ -61,6 +78,7 @@ export function EvidenceClient({
       setSourceUrl('');
       setReportingPeriod('');
       setNote('');
+      if (fileRef.current) fileRef.current.value = '';
       router.refresh();
     } else setMsg(res.error?.message ?? 'Could not add evidence.');
   }
@@ -114,6 +132,15 @@ export function EvidenceClient({
           <div className="field">
             <label className="label">Note (optional)</label>
             <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
+          </div>
+          <div className="field">
+            <label className="label">Document (optional — PDF, XLSX, CSV, DOCX, PNG, JPG)</label>
+            <input
+              ref={fileRef}
+              className="input"
+              type="file"
+              accept=".pdf,.csv,.txt,.xlsx,.docx,.png,.jpg,.jpeg"
+            />
           </div>
           {msg && <p style={{ color: 'var(--critical)', fontSize: 13 }}>{msg}</p>}
           <button className="btn btn-primary" type="submit" disabled={busy || !title}>

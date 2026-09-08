@@ -108,6 +108,9 @@ model Organization {
   invitations   Invitation[]
   sessions      Session[]
   suppliers     Supplier[]
+  documents     Document[]
+  evidence      Evidence[]
+  datapoints    Datapoint[]
 
   @@map("organization")
 }
@@ -430,24 +433,204 @@ model SupplierRequest {
 /// Lightweight evidence pointer submitted by a supplier. Phase 3 links these to
 /// real Document + Evidence records; for now it captures the claim + a URL/note.
 model SupplierEvidenceRef {
-  id                String       @id @default(uuid()) @db.Uuid
-  organizationId    String       @map("organization_id") @db.Uuid
-  supplierId        String       @map("supplier_id") @db.Uuid
-  requestId         String?      @map("request_id") @db.Uuid
-  type              EvidenceType
-  title             String
-  sourceUrl         String?      @map("source_url")
-  note              String?
-  reportingPeriod   String?      @map("reporting_period")
-  verified          Boolean      @default(false)
-  submittedByUserId String       @map("submitted_by_user_id") @db.Uuid
-  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                 String       @id @default(uuid()) @db.Uuid
+  organizationId     String       @map("organization_id") @db.Uuid
+  supplierId         String       @map("supplier_id") @db.Uuid
+  requestId          String?      @map("request_id") @db.Uuid
+  documentId         String?      @map("document_id") @db.Uuid
+  promotedEvidenceId String?      @map("promoted_evidence_id") @db.Uuid
+  type               EvidenceType
+  title              String
+  sourceUrl          String?      @map("source_url")
+  note               String?
+  reportingPeriod    String?      @map("reporting_period")
+  verified           Boolean      @default(false)
+  submittedByUserId  String       @map("submitted_by_user_id") @db.Uuid
+  createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  supplier Supplier         @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  request  SupplierRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  supplier         Supplier         @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  request          SupplierRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  document         Document?        @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  promotedEvidence Evidence?        @relation("EvidenceFromSupplierRef", fields: [promotedEvidenceId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, supplierId])
   @@map("supplier_evidence_ref")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 — Evidence Infrastructure
+// ---------------------------------------------------------------------------
+
+enum Provenance {
+  measured
+  supplier_reported
+  calculated
+  estimated
+  modeled
+  inferred
+
+  @@map("provenance")
+}
+
+enum DataLabel {
+  ai_extracted
+  human_reviewed
+  verified
+
+  @@map("data_label")
+}
+
+enum EvidenceStatus {
+  uploaded
+  processing
+  extracted
+  reviewed
+  verified
+  rejected
+  expired
+  superseded
+
+  @@map("evidence_status")
+}
+
+enum DocumentProcessingStatus {
+  received
+  scanned
+  failed
+
+  @@map("document_processing_status")
+}
+
+enum ScanStatus {
+  pending
+  clean
+  infected
+  skipped
+
+  @@map("scan_status")
+}
+
+/// A stored file. Content-addressed by `checksumSha256`; `storageKey` is opaque
+/// and never exposed — downloads go through a short-lived signed URL.
+model Document {
+  id               String                   @id @default(uuid()) @db.Uuid
+  organizationId   String                   @map("organization_id") @db.Uuid
+  filename         String
+  mime             String
+  sizeBytes        Int                      @map("size_bytes")
+  checksumSha256   String                   @map("checksum_sha256")
+  storageKey       String                   @map("storage_key")
+  storageDriver    String                   @map("storage_driver")
+  version          Int                      @default(1)
+  processingStatus DocumentProcessingStatus @default(received) @map("processing_status")
+  scanStatus       ScanStatus               @default(pending) @map("scan_status")
+  retentionUntil   DateTime?                @map("retention_until") @db.Date
+  uploadedByUserId String                   @map("uploaded_by_user_id") @db.Uuid
+  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  evidence     Evidence[]
+  supplierRefs SupplierEvidenceRef[]
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, checksumSha256])
+  @@map("document")
+}
+
+/// Proof supporting one or more datapoints. Typed; versioned (supersedesId);
+/// moves through a lifecycle state machine (see @trace/domain).
+model Evidence {
+  id               String         @id @default(uuid()) @db.Uuid
+  organizationId   String         @map("organization_id") @db.Uuid
+  type             EvidenceType
+  title            String
+  documentId       String?        @map("document_id") @db.Uuid
+  source           String         @default("manual")
+  sourceUrl        String?        @map("source_url")
+  reportingPeriod  String?        @map("reporting_period")
+  issuer           String?
+  confidenceScore  Decimal?       @map("confidence_score") @db.Decimal(5, 2)
+  hash             String
+  metadata         Json           @default("{}")
+  status           EvidenceStatus @default(uploaded)
+  version          Int            @default(1)
+  supersedesId     String?        @map("supersedes_id") @db.Uuid
+  uploadedByUserId String         @map("uploaded_by_user_id") @db.Uuid
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  expiresAt        DateTime?      @map("expires_at") @db.Date
+
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document         Document?              @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  supersedes       Evidence?              @relation("EvidenceVersion", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy     Evidence[]             @relation("EvidenceVersion")
+  datapoints       DatapointEvidence[]
+  verifications    EvidenceVerification[]
+  fromSupplierRefs SupplierEvidenceRef[]  @relation("EvidenceFromSupplierRef")
+
+  @@index([organizationId, status])
+  @@index([organizationId, type])
+  @@map("evidence")
+}
+
+/// A material sustainability value. `label` tracks the trust lifecycle
+/// (ai_extracted → human_reviewed → verified); `provenance` is never downgraded
+/// silently (Principle 3). Links to Evidence via DatapointEvidence.
+model Datapoint {
+  id              String     @id @default(uuid()) @db.Uuid
+  organizationId  String     @map("organization_id") @db.Uuid
+  metricKey       String     @map("metric_key")
+  valueNumeric    Decimal?   @map("value_numeric") @db.Decimal(20, 6)
+  valueText       String?    @map("value_text")
+  unit            String?
+  provenance      Provenance
+  label           DataLabel  @default(human_reviewed)
+  reportingPeriod String?    @map("reporting_period")
+  subjectType     String     @map("subject_type")
+  subjectId       String     @map("subject_id") @db.Uuid
+  createdByUserId String     @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  evidence     DatapointEvidence[]
+
+  @@index([organizationId, subjectType, subjectId])
+  @@index([organizationId, metricKey])
+  @@map("datapoint")
+}
+
+model DatapointEvidence {
+  organizationId String   @map("organization_id") @db.Uuid
+  datapointId    String   @map("datapoint_id") @db.Uuid
+  evidenceId     String   @map("evidence_id") @db.Uuid
+  linkedByUserId String   @map("linked_by_user_id") @db.Uuid
+  linkedAt       DateTime @default(now()) @map("linked_at") @db.Timestamptz(6)
+
+  datapoint Datapoint @relation(fields: [datapointId], references: [id], onDelete: Cascade)
+  evidence  Evidence  @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@id([datapointId, evidenceId])
+  @@index([organizationId])
+  @@index([evidenceId])
+  @@map("datapoint_evidence")
+}
+
+model EvidenceVerification {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  evidenceId       String   @map("evidence_id") @db.Uuid
+  method           String
+  outcome          String
+  verifiedByUserId String   @map("verified_by_user_id") @db.Uuid
+  verifiedAt       DateTime @default(now()) @map("verified_at") @db.Timestamptz(6)
+  notes            String?
+
+  evidence Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, evidenceId])
+  @@map("evidence_verification")
 }
 
 /// Versioned, append-only aggregated snapshot of a supplier's sustainability

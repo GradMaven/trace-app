@@ -192,3 +192,41 @@ export function SupplierActions({
     </div>
   );
 }
+
+export function PromoteEvidenceButton({
+  supplierId,
+  refId,
+  promotedEvidenceId,
+}: {
+  supplierId: string;
+  refId: string;
+  promotedEvidenceId: string | null;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+
+  if (promotedEvidenceId) {
+    return (
+      <a href={`/data/evidence/${promotedEvidenceId}`} style={{ color: 'var(--accent)' }}>
+        View evidence
+      </a>
+    );
+  }
+
+  async function promote() {
+    setBusy(true);
+    const res = await clientFetch<{ evidenceId: string }>(
+      `/suppliers/${supplierId}/evidence-refs/${refId}/promote`,
+      { method: 'POST' },
+    );
+    setBusy(false);
+    if (res.ok && res.data) router.push(`/data/evidence/${res.data.evidenceId}`);
+    else router.refresh();
+  }
+
+  return (
+    <button className="btn" onClick={() => void promote()} disabled={busy}>
+      {busy ? '…' : 'Promote to Evidence'}
+    </button>
+  );
+}

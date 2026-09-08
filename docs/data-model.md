@@ -214,6 +214,42 @@ supplier_passport(id, organization_id, supplier_id, version, builder_version, co
   `provenance` (`supplier_reported` / `measured` / `not_provided`).
 - RLS (`FORCE`, `current_org()`) on all seven tables — migration `0004_suppliers_rls`.
 
+### Evidence (Phase 3)
+
+```
+document(id, organization_id, filename, mime, size_bytes, checksum_sha256, storage_key,
+         storage_driver, version, processing_status document_processing_status,
+         scan_status scan_status, retention_until date, uploaded_by_user_id)
+  @@index(organization_id, created_at); @@index(organization_id, checksum_sha256)
+evidence(id, organization_id, type evidence_type, title, document_id NULL, source, source_url,
+         reporting_period, issuer, confidence_score numeric(5,2), hash, metadata jsonb,
+         status evidence_status, version, supersedes_id NULL, uploaded_by_user_id, expires_at date)
+  @@index(organization_id, status); @@index(organization_id, type)
+datapoint(id, organization_id, metric_key, value_numeric numeric(20,6) NULL, value_text NULL,
+          unit NULL, provenance provenance, label data_label, reporting_period,
+          subject_type, subject_id, created_by_user_id)
+  @@index(organization_id, subject_type, subject_id); @@index(organization_id, metric_key)
+datapoint_evidence(organization_id, datapoint_id, evidence_id, linked_by_user_id, linked_at,
+                   @@id(datapoint_id, evidence_id))
+evidence_verification(id, organization_id, evidence_id, method, outcome, verified_by_user_id,
+                      verified_at, notes)
+```
+
+- **Storage** is abstracted by `@trace/storage` (`StorageService`): a local-disk driver
+  (dev — HMAC-signed URLs served by the API's `/storage/local` route) and an
+  S3-compatible driver (deployment — native presigned GET). Storage keys are opaque and
+  content-addressed: `docs/<org>/<sha256>/<filename>`.
+- **Evidence lifecycle** is a pure state machine in `@trace/domain`
+  (`uploaded → processing → extracted → reviewed → verified → expired|superseded`, plus
+  `rejected`). `verified`/`rejected`/`expired` transitions require `evidence.verify`;
+  others require `evidence.update`. Superseding inserts a new `version` row with
+  `supersedes_id` and marks the old one `superseded` (append-only, ADR-004).
+- `datapoint.label` tracks the trust lifecycle (`ai_extracted → human_reviewed →
+  verified`); `provenance` is never downgraded silently.
+- RLS (`FORCE`, `current_org()`) on all five tables — migration `0006_evidence_rls`.
+- `supplier_evidence_ref` gained `document_id` and `promoted_evidence_id`: a
+  supplier-submitted reference can be promoted into a first-class `evidence` row.
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

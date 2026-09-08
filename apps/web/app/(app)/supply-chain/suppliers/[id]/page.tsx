@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { serverFetch } from '@/lib/server-api';
-import { SupplierActions } from './supplier-detail-client';
+import { SupplierActions, PromoteEvidenceButton } from './supplier-detail-client';
 import { PassportView } from './passport-view';
 
 export const dynamic = 'force-dynamic';
@@ -35,6 +35,8 @@ interface SupplierDetail {
     sourceUrl: string | null;
     reportingPeriod: string | null;
     verified: boolean;
+    documentId: string | null;
+    promotedEvidenceId: string | null;
   }>;
   passport: { version: number; completeness: number; computedAt: string; data: unknown } | null;
 }
@@ -215,7 +217,8 @@ export default async function SupplierDetailPage({ params }: { params: Promise<{
                 <th>Title</th>
                 <th>Type</th>
                 <th>Period</th>
-                <th>Verified</th>
+                <th>Document</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -232,7 +235,14 @@ export default async function SupplierDetailPage({ params }: { params: Promise<{
                   </td>
                   <td className="muted">{e.type}</td>
                   <td className="muted">{e.reportingPeriod ?? '—'}</td>
-                  <td>{e.verified ? <span className="tag">verified</span> : <span className="muted">no</span>}</td>
+                  <td className="muted">{e.documentId ? 'yes' : '—'}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    <PromoteEvidenceButton
+                      supplierId={s.id}
+                      refId={e.id}
+                      promotedEvidenceId={e.promotedEvidenceId}
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>

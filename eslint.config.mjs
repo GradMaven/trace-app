@@ -90,7 +90,12 @@ export default tseslint.config(
   // Infrastructure packages (db, and later ai/compliance) may only depend on
   // @trace/shared among TRACE packages, and never on the API/UI/web framework.
   {
-    files: ["packages/db/**/*.ts", "packages/ai/**/*.ts", "packages/compliance/**/*.ts"],
+    files: [
+      "packages/db/**/*.ts",
+      "packages/storage/**/*.ts",
+      "packages/ai/**/*.ts",
+      "packages/compliance/**/*.ts",
+    ],
     rules: {
       "no-restricted-imports": [
         "error",

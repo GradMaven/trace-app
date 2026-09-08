@@ -25,6 +25,7 @@ const addEvidenceSchema = z.object({
   note: z.string().max(2000).optional(),
   reportingPeriod: z.string().max(60).optional(),
   requestId: z.string().uuid().optional(),
+  documentId: z.string().uuid().optional(),
 });
 
 @ApiTags('supplier-portal')
