@@ -166,6 +166,7 @@ export class AuthService {
           where: { id: existing.id },
           data: {
             status: 'active',
+            ...(invitation.supplierId ? { supplierId: invitation.supplierId } : {}),
             roles: {
               connectOrCreate: roles.map((r) => ({
                 where: { membershipId_roleId: { membershipId: existing.id, roleId: r.id } },
@@ -180,6 +181,7 @@ export class AuthService {
             organizationId: invitation.organizationId,
             userId,
             status: 'active',
+            supplierId: invitation.supplierId,
             roles: { create: roles.map((r) => ({ roleId: r.id })) },
           },
         });

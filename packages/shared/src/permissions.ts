@@ -24,8 +24,13 @@ export const PERMISSIONS = {
   // Suppliers
   'supplier.read': 'View suppliers',
   'supplier.create': 'Create suppliers',
-  'supplier.update': 'Edit suppliers',
-  'supplier.invite': 'Invite suppliers to the portal',
+  'supplier.update': 'Edit suppliers, contacts, locations, and the relationship',
+  'supplier.archive': 'Archive and restore suppliers',
+  'supplier.invite': 'Invite supplier-portal users',
+  'supplier.request': 'Send and manage information requests to suppliers',
+
+  // Supplier portal (external supplier users)
+  'portal.access': 'Access the supplier portal for the linked supplier',
 
   // Evidence
   'evidence.read': 'View evidence',

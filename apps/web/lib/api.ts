@@ -1,10 +1,22 @@
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
 
+export interface ApiErrorDetail {
+  path?: string;
+  message: string;
+}
+
+export interface ApiError {
+  code: string;
+  message: string;
+  requestId?: string;
+  details?: ApiErrorDetail[];
+}
+
 export interface ApiResult<T> {
   ok: boolean;
   status: number;
   data: T | null;
-  error?: { code: string; message: string; requestId?: string };
+  error?: ApiError;
 }
 
 export async function parseResult<T>(res: Response): Promise<ApiResult<T>> {
@@ -17,7 +29,7 @@ export async function parseResult<T>(res: Response): Promise<ApiResult<T>> {
     body = null;
   }
   if (!res.ok) {
-    const err = (body as { error?: { code: string; message: string; requestId?: string } })?.error;
+    const err = (body as { error?: ApiError })?.error;
     return {
       ok: false,
       status,

@@ -18,6 +18,7 @@ export class MeController {
       where: { userId: actor.userId, status: 'active' },
       include: {
         organization: { select: { id: true, slug: true, legalName: true } },
+        supplier: { select: { id: true, name: true } },
         roles: { include: { role: { select: { key: true, name: true } } } },
       },
       orderBy: { createdAt: 'asc' },
@@ -26,9 +27,11 @@ export class MeController {
     return {
       user: { id: actor.userId, email: actor.email, name: actor.name },
       activeOrganizationId: actor.organizationId,
+      activeSupplierId: actor.supplierId,
       permissions: actor.permissions,
       memberships: memberships.map((m) => ({
         organization: m.organization,
+        supplier: m.supplier,
         roles: m.roles.map((r) => r.role),
       })),
     };
@@ -38,9 +41,11 @@ export class MeController {
 interface MeResponse {
   user: { id: string; email: string; name: string };
   activeOrganizationId: string | null;
+  activeSupplierId: string | null;
   permissions: string[];
   memberships: Array<{
     organization: { id: string; slug: string; legalName: string };
+    supplier: { id: string; name: string } | null;
     roles: Array<{ key: string; name: string }>;
   }>;
 }

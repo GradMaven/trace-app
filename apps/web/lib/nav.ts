@@ -23,9 +23,9 @@ export const NAV: NavSection[] = [
   {
     label: 'Supply Chain',
     items: [
-      { label: 'Suppliers', href: '/supply-chain/suppliers' },
-      { label: 'Supplier Requests', href: '/supply-chain/requests' },
-      { label: 'Supplier Passports', href: '/supply-chain/passports' },
+      { label: 'Suppliers', href: '/supply-chain/suppliers', ready: true },
+      { label: 'Supplier Requests', href: '/supply-chain/requests', ready: true },
+      { label: 'Supplier Passports', href: '/supply-chain/passports', ready: true },
       { label: 'Carbon Map', href: '/supply-chain/carbon-map' },
     ],
   },

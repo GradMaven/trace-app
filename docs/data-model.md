@@ -183,6 +183,37 @@ audit_log(id, organization_id NULL, actor_id NULL, action, resource_type, resour
           before jsonb, after jsonb, request_id, created_at, prev_hash, hash)
 ```
 
+### Supply chain (Phase 2)
+
+```
+supplier(id, organization_id, name, country, industry_nace, registration_ids jsonb,
+         status supplier_status, created_by_user_id, created_at, updated_at, deleted_at)
+supplier_contact(id, organization_id, supplier_id, email, name, role, is_primary,
+                 UNIQUE(supplier_id, email))
+supplier_location(id, organization_id, supplier_id, kind, label, country, address jsonb,
+                  latitude, longitude)
+supplier_relationship(id, organization_id, supplier_id UNIQUE, category, tier,
+                      annual_spend numeric(18,2), currency, since date)
+supplier_request(id, organization_id, supplier_id, kind, template_version, title, message,
+                 status supplier_request_status, due_on date, responses jsonb,
+                 created_by_user_id, sent_at, submitted_at, submitted_by_user_id, reviewed_at)
+supplier_evidence_ref(id, organization_id, supplier_id, request_id NULL, type evidence_type,
+                      title, source_url, note, reporting_period, verified,
+                      submitted_by_user_id)      -- Phase 3 links these to document + evidence
+supplier_passport(id, organization_id, supplier_id, version, builder_version, completeness,
+                  data jsonb, computed_at, computed_by_user_id, UNIQUE(supplier_id, version))
+```
+
+- `membership.supplier_id` / `invitation.supplier_id` (nullable) scope a supplier-portal
+  user to exactly one supplier.
+- `supplier_request.responses` is keyed by question id; the template lives in
+  `@trace/domain` (`SUPPLIER_QUESTIONNAIRE`, `QUESTIONNAIRE_VERSION`).
+- `supplier_passport` is **append-only** and versioned: `recomputeSupplierPassport`
+  inserts `version = max+1` from the supplier profile + latest submitted questionnaire +
+  evidence summary via `@trace/domain.buildPassport`; each field in `data` carries a
+  `provenance` (`supplier_reported` / `measured` / `not_provided`).
+- RLS (`FORCE`, `current_org()`) on all seven tables — migration `0004_suppliers_rls`.
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

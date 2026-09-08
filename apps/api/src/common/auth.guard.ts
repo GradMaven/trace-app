@@ -14,6 +14,8 @@ export interface AuthenticatedActor {
   sessionId: string;
   organizationId: string | null;
   membershipId: string | null;
+  /** Set when the active membership is a supplier-portal user scoped to one supplier. */
+  supplierId: string | null;
   permissions: Permission[];
 }
 
@@ -69,6 +71,7 @@ export class AuthGuard implements CanActivate {
     const activeOrgId = await this.pickOrganization(session.userId, requestedOrg ?? session.organizationId);
 
     let membershipId: string | null = null;
+    let supplierId: string | null = null;
     let permissions: Permission[] = [];
     if (activeOrgId) {
       const membership = await prisma.membership.findUnique({
@@ -77,6 +80,7 @@ export class AuthGuard implements CanActivate {
       });
       if (membership && membership.status === 'active') {
         membershipId = membership.id;
+        supplierId = membership.supplierId;
         permissions = resolvePermissions(
           membership.roles.map((mr) => ({
             key: mr.role.key,
@@ -93,6 +97,7 @@ export class AuthGuard implements CanActivate {
       sessionId: session.id,
       organizationId: membershipId ? activeOrgId : null,
       membershipId,
+      supplierId: membershipId ? supplierId : null,
       permissions,
     };
   }

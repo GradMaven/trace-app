@@ -26,3 +26,6 @@ export {
   ensurePlatformRole,
 } from './provisioning';
 export type { ProvisionOrganizationInput, ProvisionedOrganization } from './provisioning';
+
+export { recomputeSupplierPassport } from './supplier';
+export type { RecomputePassportArgs, RecomputedPassport } from './supplier';

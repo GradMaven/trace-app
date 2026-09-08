@@ -13,6 +13,8 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
 import { MembersModule } from './modules/members/members.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
+import { SuppliersModule } from './modules/suppliers/suppliers.module';
+import { SupplierPortalModule } from './modules/supplier-portal/supplier-portal.module';
 
 @Module({
   imports: [
@@ -23,6 +25,8 @@ import { AuditLogModule } from './modules/audit-log/audit-log.module';
     MembersModule,
     RolesModule,
     AuditLogModule,
+    SuppliersModule,
+    SupplierPortalModule,
   ],
   providers: [
     CatalogBootstrap,

@@ -33,9 +33,11 @@ export async function serverFetch<T>(path: string, init: RequestInit = {}): Prom
 export interface Me {
   user: { id: string; email: string; name: string };
   activeOrganizationId: string | null;
+  activeSupplierId: string | null;
   permissions: string[];
   memberships: Array<{
     organization: { id: string; slug: string; legalName: string };
+    supplier: { id: string; name: string } | null;
     roles: Array<{ key: string; name: string }>;
   }>;
 }

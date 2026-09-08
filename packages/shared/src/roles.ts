@@ -72,7 +72,9 @@ export const ROLE_DEFINITIONS: Record<RoleKey, RoleDefinition> = {
       'supplier.read',
       'supplier.create',
       'supplier.update',
+      'supplier.archive',
       'supplier.invite',
+      'supplier.request',
       'evidence.read',
       'evidence.create',
       'evidence.update',
@@ -104,6 +106,7 @@ export const ROLE_DEFINITIONS: Record<RoleKey, RoleDefinition> = {
       'supplier.read',
       'supplier.create',
       'supplier.update',
+      'supplier.request',
       'evidence.read',
       'evidence.create',
       'evidence.update',
@@ -130,6 +133,7 @@ export const ROLE_DEFINITIONS: Record<RoleKey, RoleDefinition> = {
       'supplier.create',
       'supplier.update',
       'supplier.invite',
+      'supplier.request',
       'evidence.read',
       'activity.read',
       'calculation.read',
@@ -169,9 +173,9 @@ export const ROLE_DEFINITIONS: Record<RoleKey, RoleDefinition> = {
   supplier_user: {
     key: 'supplier_user',
     name: 'Supplier User',
-    description: 'External supplier contact using the supplier portal. Scope-limited.',
+    description: 'External supplier contact using the supplier portal. Scoped to one supplier.',
     isPlatform: false,
-    permissions: ['organization.read', 'evidence.read', 'evidence.create'],
+    permissions: ['organization.read', 'portal.access', 'evidence.read', 'evidence.create'],
   },
 };
 

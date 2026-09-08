@@ -50,6 +50,47 @@ enum OrganizationStatus {
   @@map("organization_status")
 }
 
+enum SupplierStatus {
+  active
+  archived
+
+  @@map("supplier_status")
+}
+
+enum SupplierRequestKind {
+  sustainability_questionnaire
+
+  @@map("supplier_request_kind")
+}
+
+enum SupplierRequestStatus {
+  draft
+  sent
+  in_progress
+  submitted
+  accepted
+  declined
+
+  @@map("supplier_request_status")
+}
+
+enum EvidenceType {
+  supplier_report
+  invoice
+  utility_bill
+  certificate
+  epd
+  lca
+  audit_report
+  questionnaire
+  erp_record
+  logistics_record
+  contract
+  external_dataset
+
+  @@map("evidence_type")
+}
+
 model Organization {
   id                    String             @id @default(uuid()) @db.Uuid
   slug                  String             @unique
@@ -66,17 +107,18 @@ model Organization {
   roles         Role[]
   invitations   Invitation[]
   sessions      Session[]
+  suppliers     Supplier[]
 
   @@map("organization")
 }
 
 model BusinessUnit {
-  id             String        @id @default(uuid()) @db.Uuid
-  organizationId String        @map("organization_id") @db.Uuid
-  parentId       String?       @map("parent_id") @db.Uuid
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  parentId       String?  @map("parent_id") @db.Uuid
   name           String
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   parent       BusinessUnit?  @relation("BusinessUnitTree", fields: [parentId], references: [id], onDelete: SetNull)
@@ -104,20 +146,24 @@ model User {
 }
 
 /// User <-> Organization link. The tenant-scoped identity.
+/// `supplierId` set => a supplier-portal user scoped to that one supplier.
 model Membership {
   id             String           @id @default(uuid()) @db.Uuid
   organizationId String           @map("organization_id") @db.Uuid
   userId         String           @map("user_id") @db.Uuid
+  supplierId     String?          @map("supplier_id") @db.Uuid
   status         MembershipStatus @default(invited)
   createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  roles       MembershipRole[]
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  supplier     Supplier?        @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  roles        MembershipRole[]
 
   @@unique([organizationId, userId])
   @@index([userId])
+  @@index([supplierId])
   @@map("membership")
 }
 
@@ -177,15 +223,15 @@ model MembershipRole {
 
 /// Server-side session for cookie auth. `tokenHash` = sha256 of the opaque cookie value.
 model Session {
-  id             String   @id @default(uuid()) @db.Uuid
-  userId         String   @map("user_id") @db.Uuid
-  organizationId String?  @map("organization_id") @db.Uuid
-  tokenHash      String   @unique @map("token_hash")
-  mfaPassed      Boolean  @default(false) @map("mfa_passed")
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  organizationId String?   @map("organization_id") @db.Uuid
+  tokenHash      String    @unique @map("token_hash")
+  mfaPassed      Boolean   @default(false) @map("mfa_passed")
   ip             String?
-  userAgentHash  String?  @map("user_agent_hash")
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  expiresAt      DateTime @map("expires_at") @db.Timestamptz(6)
+  userAgentHash  String?   @map("user_agent_hash")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
   revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -219,6 +265,7 @@ model Invitation {
   organizationId  String           @map("organization_id") @db.Uuid
   email           String
   roleKeys        String[]         @map("role_keys")
+  supplierId      String?          @map("supplier_id") @db.Uuid
   invitedByUserId String           @map("invited_by_user_id") @db.Uuid
   status          InvitationStatus @default(pending)
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -227,10 +274,12 @@ model Invitation {
 
   organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   invitedBy    User             @relation("InvitationInvitedBy", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  supplier     Supplier?        @relation(fields: [supplierId], references: [id], onDelete: Cascade)
   tokens       MagicLinkToken[]
 
   @@index([organizationId, status])
   @@index([email])
+  @@index([supplierId])
   @@map("invitation")
 }
 
@@ -263,4 +312,160 @@ model AuditHead {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("audit_head")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 — Supplier Intelligence
+// ---------------------------------------------------------------------------
+
+model Supplier {
+  id              String         @id @default(uuid()) @db.Uuid
+  organizationId  String         @map("organization_id") @db.Uuid
+  name            String
+  country         String         @db.Char(2)
+  industryNace    String?        @map("industry_nace")
+  registrationIds Json           @default("{}") @map("registration_ids")
+  status          SupplierStatus @default(active)
+  createdByUserId String         @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?      @map("deleted_at") @db.Timestamptz(6)
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contacts     SupplierContact[]
+  locations    SupplierLocation[]
+  relationship SupplierRelationship?
+  requests     SupplierRequest[]
+  evidenceRefs SupplierEvidenceRef[]
+  passports    SupplierPassport[]
+  memberships  Membership[]
+  invitations  Invitation[]
+
+  @@index([organizationId, name])
+  @@index([organizationId, status])
+  @@map("supplier")
+}
+
+model SupplierContact {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  supplierId     String   @map("supplier_id") @db.Uuid
+  email          String
+  name           String
+  role           String?
+  isPrimary      Boolean  @default(false) @map("is_primary")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@unique([supplierId, email])
+  @@index([organizationId, supplierId])
+  @@map("supplier_contact")
+}
+
+model SupplierLocation {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  supplierId     String   @map("supplier_id") @db.Uuid
+  kind           String   @default("site")
+  label          String
+  country        String   @db.Char(2)
+  address        Json     @default("{}")
+  latitude       Decimal? @db.Decimal(9, 6)
+  longitude      Decimal? @db.Decimal(9, 6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, supplierId])
+  @@map("supplier_location")
+}
+
+model SupplierRelationship {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  supplierId     String    @unique @map("supplier_id") @db.Uuid
+  category       String?
+  tier           Int?
+  annualSpend    Decimal?  @map("annual_spend") @db.Decimal(18, 2)
+  currency       String    @default("EUR") @db.Char(3)
+  since          DateTime? @db.Date
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("supplier_relationship")
+}
+
+/// An information request sent to a supplier. Phase 2: a fixed sustainability
+/// questionnaire. `responses` is keyed by question id (see @trace/domain).
+model SupplierRequest {
+  id                String                @id @default(uuid()) @db.Uuid
+  organizationId    String                @map("organization_id") @db.Uuid
+  supplierId        String                @map("supplier_id") @db.Uuid
+  kind              SupplierRequestKind   @default(sustainability_questionnaire)
+  templateVersion   String                @map("template_version")
+  title             String
+  message           String?
+  status            SupplierRequestStatus @default(draft)
+  dueOn             DateTime?             @map("due_on") @db.Date
+  responses         Json                  @default("{}")
+  createdByUserId   String                @map("created_by_user_id") @db.Uuid
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  sentAt            DateTime?             @map("sent_at") @db.Timestamptz(6)
+  submittedAt       DateTime?             @map("submitted_at") @db.Timestamptz(6)
+  submittedByUserId String?               @map("submitted_by_user_id") @db.Uuid
+  reviewedAt        DateTime?             @map("reviewed_at") @db.Timestamptz(6)
+
+  supplier     Supplier              @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  evidenceRefs SupplierEvidenceRef[]
+
+  @@index([organizationId, supplierId])
+  @@index([organizationId, status])
+  @@map("supplier_request")
+}
+
+/// Lightweight evidence pointer submitted by a supplier. Phase 3 links these to
+/// real Document + Evidence records; for now it captures the claim + a URL/note.
+model SupplierEvidenceRef {
+  id                String       @id @default(uuid()) @db.Uuid
+  organizationId    String       @map("organization_id") @db.Uuid
+  supplierId        String       @map("supplier_id") @db.Uuid
+  requestId         String?      @map("request_id") @db.Uuid
+  type              EvidenceType
+  title             String
+  sourceUrl         String?      @map("source_url")
+  note              String?
+  reportingPeriod   String?      @map("reporting_period")
+  verified          Boolean      @default(false)
+  submittedByUserId String       @map("submitted_by_user_id") @db.Uuid
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  supplier Supplier         @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  request  SupplierRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, supplierId])
+  @@map("supplier_evidence_ref")
+}
+
+/// Versioned, append-only aggregated snapshot of a supplier's sustainability
+/// profile (brief Module C). `data` is the PassportData from @trace/domain.
+model SupplierPassport {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  supplierId       String   @map("supplier_id") @db.Uuid
+  version          Int
+  builderVersion   String   @map("builder_version")
+  completeness     Int
+  data             Json
+  computedAt       DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+  computedByUserId String?  @map("computed_by_user_id") @db.Uuid
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@unique([supplierId, version])
+  @@index([organizationId, supplierId])
+  @@map("supplier_passport")
 }

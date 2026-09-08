@@ -29,12 +29,14 @@ regulatory disclosure it supports.
 
 ## Project status
 
-**Phase 1 — Application foundation (landed).** Monorepo, backend/domain packages, NestJS
-API, Next.js shell, Prisma schema + migrations, tenant isolation, hash-chained audit log,
-and the NordWerk demo seed. Builds, typechecks, lints, and unit tests are green; the
-Postgres-dependent integration suite (RLS / tenant isolation) runs in CI. See
-[docs/roadmap.md](docs/roadmap.md) for exact status and what's next (Phase 2 — Supplier
-Intelligence).
+**Phase 2 — Supplier Intelligence (landed).** On top of the Phase 1 foundation: supplier
+directory + detail, contacts/locations/relationship, supplier-portal-user invitations, the
+supplier portal (fill & submit a sustainability questionnaire, share evidence), and the
+versioned **Supplier Passport** — a provenance-tagged snapshot recomputed from the
+submitted questionnaire. NordWerk seed now has 20 suppliers. Builds, typechecks, lints, and
+43 unit tests are green; the Postgres-dependent integration suites (RLS / tenant isolation,
+supplier flow) run in CI. See [docs/roadmap.md](docs/roadmap.md) for exact status and
+what's next (Phase 3 — Evidence Infrastructure).
 
 Reference documents:
 
