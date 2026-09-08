@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AppError, page, type Page } from '@trace/shared';
-import { withOrgContext, writeAuditLog } from '@trace/db';
+import { datapointTrust, withOrgContext, writeAuditLog } from '@trace/db';
 import type { CreateDatapointInput, ListDatapointsQuery } from './datapoints.dto';
 
 export interface DatapointView {
@@ -103,9 +103,11 @@ export class DatapointsService {
         },
       });
       if (!dp) throw AppError.notFound('datapoint.not_found', 'Datapoint not found.');
+      const trust = await datapointTrust(db, organizationId, dp.id);
       return {
         id: dp.id,
         metricKey: dp.metricKey,
+        trust,
         value: dp.valueNumeric?.toString() ?? null,
         valueText: dp.valueText,
         unit: dp.unit,

@@ -49,3 +49,19 @@ export type {
   RunExtractionResult,
   PromoteCandidateArgs,
 } from './ai-pipeline';
+
+export {
+  scoreDatapointTrust,
+  runQualityScan,
+  updateIssueStatus,
+  updateAnomalyStatus,
+  datapointTrust,
+  qualitySummary,
+} from './trust';
+export type {
+  ScoreDatapointTrustArgs,
+  TrustScoreOutcome,
+  RunQualityScanArgs,
+  QualityScanResult,
+  QualitySummary,
+} from './trust';

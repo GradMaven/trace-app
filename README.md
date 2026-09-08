@@ -29,19 +29,22 @@ regulatory disclosure it supports.
 
 ## Project status
 
-**Phase 5 — AI Document Intelligence (landed).** On top of Phases 1–4: the `@trace/ai`
-package with an `AIProvider` interface, a **Claude adapter** (forced tool use,
-Zod-validated structured output, token/cost accounting) and a deterministic **dev stub**
-(heuristic extraction, clearly labelled — used when no API key is set). A document
-extraction pipeline (deterministic parse → classify → extract) records **every model call
-as an `ai_job`** before its output is used, and writes only to `candidate_datapoint` — a
-human with `candidate.review` **promotes** each candidate to a real datapoint backed by
-evidence from the source document, or rejects it. Web adds the Review Queue (with the
-source span highlighted in the parsed context) and an AI Log. Builds, typechecks, lints,
-and 89 unit tests are green; the Postgres-dependent integration suites (RLS / tenant
-isolation, supplier flow, evidence flow, carbon flow, AI extraction flow) run in CI. See
-[docs/roadmap.md](docs/roadmap.md) for exact status and what's next (Phase 6 — Trust
-Engine).
+**Phase 6 — Trust Engine (landed).** On top of Phases 1–5: `@trace/domain/trust` — a
+documented, additive **TRACE Trust Score** per datapoint (`trust-model@1.0.0`, 0–100 with a
+stored per-dimension breakdown so every score explains itself), a **data-quality check
+engine** (`quality-rules@1.0.0`, 12 issue kinds — missing value/unit/evidence, unverified /
+expired evidence, stale data, unit inconsistency, impossible value, duplicate, conflicting
+supplier report, outdated factor, low methodology tier), and deterministic **anomaly
+detection** (`anomaly-detector@1.0.0` — modified z-score over history and peers,
+period-over-period step). `@trace/db` adds an immutable, version-chained `trust_score`, an
+idempotent `data_quality_issue` / `anomaly` model (dedupe key, auto-resolve, sticky
+dismiss) and a `quality_scan` run record; `runQualityScan` scores every in-scope datapoint,
+refreshes issues, detects anomalies and writes one audit entry. Web adds **Data → Data
+Quality** (dashboard, scan history, run scan), issue and anomaly triage queues, and the
+Trust Score breakdown on the datapoint page. Builds, typechecks, lints, and unit tests are
+green; the Postgres-dependent integration suites (RLS / tenant isolation, supplier, evidence,
+carbon, AI extraction, trust) run in CI. See [docs/roadmap.md](docs/roadmap.md) for exact
+status and what's next (Phase 7 — Compliance).
 
 Reference documents:
 

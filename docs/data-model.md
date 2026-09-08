@@ -140,12 +140,8 @@ verification(id, organization_id, subject_type, subject_id, method, verified_by,
 ### Trust, quality, compliance, audit, process
 
 ```
-trust_score(id, organization_id, subject_type, subject_id, value numeric(5,2),
-            breakdown jsonb, model_version, computed_at)
-data_quality_issue(id, organization_id, kind, severity, subject_type, subject_id,
-                   details jsonb, status, created_at, resolved_at NULL)
-anomaly(id, organization_id, subject_type, subject_id, metric_key, observed, expected,
-        deviation_pct numeric, explanations jsonb, status, created_at)
+-- trust_score / data_quality_issue / anomaly / quality_scan: see
+-- "### Trust engine (Phase 6)" below for the implemented shape.
 
 regulation(id, key, name, jurisdiction, rule_store_version)
 requirement(id, regulation_id, code, title, description, rule_store_version)
@@ -329,6 +325,52 @@ candidate_datapoint(id, organization_id, document_id, extraction_id NULL, ai_job
   possible.
 - RLS (`FORCE`, `current_org()`) on `ai_job`, `document_extraction`, `candidate_datapoint`
   — migration `0010_ai_rls`.
+
+### Trust engine (Phase 6)
+
+```
+trust_score(id, organization_id, datapoint_id, subject_type, subject_id, metric_key,
+            reporting_period NULL, value int, band trust_band, breakdown jsonb,
+            model_version, inputs_digest, supersedes_id NULL, computed_by_user_id NULL,
+            computed_at)                          -- immutable; current = no successor
+data_quality_issue(id, organization_id, kind data_quality_issue_kind, severity issue_severity,
+                   status issue_status, subject_type, subject_id, datapoint_id NULL,
+                   metric_key NULL, reporting_period NULL, dedupe_key, title, detail,
+                   facts jsonb, rules_version, first_detected_at, last_seen_at,
+                   resolved_at NULL, resolved_by_user_id NULL, resolution_note NULL)
+                   UNIQUE(organization_id, dedupe_key)
+anomaly(id, organization_id, method anomaly_method, status anomaly_status, subject_type,
+        subject_id, datapoint_id NULL, metric_key, point_key, reporting_period NULL,
+        dedupe_key, observed_value numeric(30,6), expected_value numeric(30,6),
+        score numeric(12,4), direction, explanations jsonb, detector_version, detected_at,
+        last_seen_at, reviewed_by_user_id NULL, reviewed_at NULL, review_note NULL)
+        UNIQUE(organization_id, dedupe_key)
+quality_scan(id, organization_id, reporting_period NULL, datapoints_scored,
+             avg_trust_score numeric(6,2) NULL, issues_opened, issues_resolved, issues_open,
+             anomalies_found, model_version, rules_version, detector_version,
+             ran_by_user_id NULL, started_at, completed_at, duration_ms)
+```
+
+- **`@trace/domain/trust`** holds all logic, pure and versioned: `scoreDatapoint`
+  (`trust-model@1.0.0`) returns `{ value 0–100, band, breakdown[] }` where the breakdown is
+  the additive per-dimension contribution table from
+  [domain-model.md](domain-model.md#trace-trust-score-model) — it is stored so every score
+  explains itself. `evaluateDatapointQuality` (`quality-rules@1.0.0`) runs 12 rules over a
+  datapoint + its peers. `detectAnomalies` (`anomaly-detector@1.0.0`) — modified z-score
+  (median/MAD) over a datapoint's history and its peer group, plus period-over-period step
+  detection, each with factual candidate explanations.
+- `trust_score` is **immutable and version-chained** (`supersedes_id`, like `calculation`);
+  re-scoring with an identical `inputs_digest` is a no-op.
+- `data_quality_issue` and `anomaly` upsert on a natural `dedupe_key` so **re-scans are
+  idempotent**: an existing issue is refreshed (`last_seen_at`), an open issue no longer
+  detected is **auto-resolved** with a note, `dismissed` is sticky, and a recurrence
+  reopens an auto-resolved issue.
+- Orchestrators in `@trace/db`: `scoreDatapointTrust`, `runQualityScan` (scores every
+  in-scope datapoint, refreshes issues, detects anomalies, writes a `quality_scan`),
+  `updateIssueStatus`, `updateAnomalyStatus`. Every mutation is hash-chain audit-logged; a
+  full scan writes one summary `quality.scan_completed` entry.
+- RLS (`FORCE`, `current_org()`) on `trust_score`, `data_quality_issue`, `anomaly`,
+  `quality_scan` — migration `0012_trust_rls`.
 
 ## Indexing (initial)
 

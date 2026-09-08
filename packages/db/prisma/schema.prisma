@@ -116,6 +116,10 @@ model Organization {
   calculations    Calculation[]
   emissions       Emission[]
   aiJobs          AiJob[]
+  trustScores     TrustScore[]
+  qualityIssues   DataQualityIssue[]
+  anomalies       Anomaly[]
+  qualityScans    QualityScan[]
 
   @@map("organization")
 }
@@ -607,6 +611,9 @@ model Datapoint {
   calculation  Calculation?         @relation(fields: [calculationId], references: [id], onDelete: SetNull)
   evidence     DatapointEvidence[]
   promotedFrom CandidateDatapoint[]
+  trustScores  TrustScore[]
+  qualityIssues DataQualityIssue[]
+  anomalies    Anomaly[]
 
   @@index([organizationId, subjectType, subjectId])
   @@index([organizationId, metricKey])
@@ -984,4 +991,193 @@ model CandidateDatapoint {
   @@index([organizationId, status])
   @@index([organizationId, documentId])
   @@map("candidate_datapoint")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6 — Trust Engine
+// ---------------------------------------------------------------------------
+
+enum TrustBand {
+  high
+  medium
+  low
+
+  @@map("trust_band")
+}
+
+enum DataQualityIssueKind {
+  missing_value
+  missing_unit
+  missing_evidence
+  unverified_evidence
+  expired_evidence
+  stale_data
+  unit_inconsistency
+  impossible_value
+  duplicate
+  conflicting_supplier_report
+  outdated_factor
+  low_methodology_tier
+
+  @@map("data_quality_issue_kind")
+}
+
+enum IssueSeverity {
+  critical
+  warning
+  info
+
+  @@map("issue_severity")
+}
+
+enum IssueStatus {
+  open
+  acknowledged
+  resolved
+  dismissed
+
+  @@map("issue_status")
+}
+
+enum AnomalyMethod {
+  mad_outlier
+  relative_change
+
+  @@map("anomaly_method")
+}
+
+enum AnomalyStatus {
+  open
+  explained
+  dismissed
+
+  @@map("anomaly_status")
+}
+
+/// Immutable, versioned Trust Score for one datapoint (brief §9,
+/// docs/domain-model.md#trace-trust-score-model). The additive breakdown is
+/// stored so the score always renders its own explanation. Recompute chains a
+/// new row via `supersedesId`; the current score is the one with no successor.
+model TrustScore {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  datapointId    String    @map("datapoint_id") @db.Uuid
+  subjectType    String    @map("subject_type")
+  subjectId      String    @map("subject_id") @db.Uuid
+  metricKey      String    @map("metric_key")
+  reportingPeriod String?  @map("reporting_period")
+  value          Int
+  band           TrustBand
+  breakdown      Json      @default("[]")
+  modelVersion   String    @map("model_version")
+  inputsDigest   String    @map("inputs_digest")
+  supersedesId   String?   @map("supersedes_id") @db.Uuid
+  computedByUserId String? @map("computed_by_user_id") @db.Uuid
+  computedAt     DateTime  @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  datapoint    Datapoint    @relation(fields: [datapointId], references: [id], onDelete: Cascade)
+  supersedes   TrustScore?  @relation("TrustScoreVersion", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy TrustScore[] @relation("TrustScoreVersion")
+
+  @@index([organizationId, datapointId, computedAt])
+  @@index([organizationId, band])
+  @@map("trust_score")
+}
+
+/// A detected data-quality problem (brief §9). `dedupeKey` makes a re-scan
+/// idempotent: an existing open issue is refreshed (`lastSeenAt`), and an issue
+/// no longer detected is auto-resolved. Never hard-deleted — a dismissed issue
+/// records the human judgement that it was not a real problem.
+model DataQualityIssue {
+  id              String              @id @default(uuid()) @db.Uuid
+  organizationId  String              @map("organization_id") @db.Uuid
+  kind            DataQualityIssueKind
+  severity        IssueSeverity
+  status          IssueStatus         @default(open)
+  subjectType     String              @map("subject_type")
+  subjectId       String              @map("subject_id") @db.Uuid
+  datapointId     String?             @map("datapoint_id") @db.Uuid
+  metricKey       String?             @map("metric_key")
+  reportingPeriod String?             @map("reporting_period")
+  dedupeKey       String              @map("dedupe_key")
+  title           String
+  detail          String
+  facts           Json                @default("{}")
+  rulesVersion    String              @map("rules_version")
+  firstDetectedAt DateTime            @default(now()) @map("first_detected_at") @db.Timestamptz(6)
+  lastSeenAt      DateTime            @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  resolvedAt      DateTime?           @map("resolved_at") @db.Timestamptz(6)
+  resolvedByUserId String?            @map("resolved_by_user_id") @db.Uuid
+  resolutionNote  String?             @map("resolution_note")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  datapoint    Datapoint?   @relation(fields: [datapointId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, dedupeKey])
+  @@index([organizationId, status, severity])
+  @@index([organizationId, kind])
+  @@map("data_quality_issue")
+}
+
+/// A flagged statistical deviation with candidate explanations (brief §9).
+/// Deterministic detectors only (see @trace/domain); a human confirms or
+/// dismisses. `dedupeKey` keeps re-scans idempotent.
+model Anomaly {
+  id              String        @id @default(uuid()) @db.Uuid
+  organizationId  String        @map("organization_id") @db.Uuid
+  method          AnomalyMethod
+  status          AnomalyStatus @default(open)
+  subjectType     String        @map("subject_type")
+  subjectId       String        @map("subject_id") @db.Uuid
+  datapointId     String?       @map("datapoint_id") @db.Uuid
+  metricKey       String        @map("metric_key")
+  pointKey        String        @map("point_key")
+  reportingPeriod String?       @map("reporting_period")
+  dedupeKey       String        @map("dedupe_key")
+  observedValue   Decimal       @map("observed_value") @db.Decimal(30, 6)
+  expectedValue   Decimal       @map("expected_value") @db.Decimal(30, 6)
+  score           Decimal       @db.Decimal(12, 4)
+  direction       String
+  explanations    Json          @default("[]")
+  detectorVersion String        @map("detector_version")
+  detectedAt      DateTime      @default(now()) @map("detected_at") @db.Timestamptz(6)
+  lastSeenAt      DateTime      @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  reviewedByUserId String?      @map("reviewed_by_user_id") @db.Uuid
+  reviewedAt      DateTime?     @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote      String?       @map("review_note")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  datapoint    Datapoint?   @relation(fields: [datapointId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, dedupeKey])
+  @@index([organizationId, status])
+  @@index([organizationId, metricKey])
+  @@map("anomaly")
+}
+
+/// One run of the trust + data-quality scan. Gives the Data Quality surface a
+/// header and a history, and records the model / rules versions used.
+model QualityScan {
+  id               String    @id @default(uuid()) @db.Uuid
+  organizationId   String    @map("organization_id") @db.Uuid
+  reportingPeriod  String?   @map("reporting_period")
+  datapointsScored Int       @default(0) @map("datapoints_scored")
+  avgTrustScore    Decimal?  @map("avg_trust_score") @db.Decimal(6, 2)
+  issuesOpened     Int       @default(0) @map("issues_opened")
+  issuesResolved   Int       @default(0) @map("issues_resolved")
+  issuesOpen       Int       @default(0) @map("issues_open")
+  anomaliesFound   Int       @default(0) @map("anomalies_found")
+  modelVersion     String    @map("model_version")
+  rulesVersion     String    @map("rules_version")
+  detectorVersion  String    @map("detector_version")
+  ranByUserId      String?   @map("ran_by_user_id") @db.Uuid
+  startedAt        DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt      DateTime? @map("completed_at") @db.Timestamptz(6)
+  durationMs       Int       @default(0) @map("duration_ms")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, startedAt])
+  @@map("quality_scan")
 }

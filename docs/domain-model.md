@@ -181,6 +181,18 @@ Every score renders its breakdown (Principle 9 of the brief). The weight table i
 configuration, versioned as `trust-model@x.y.z`, and historical scores keep their model
 version.
 
+**Implementation status (Phase 6).** `@trace/domain/trust.scoreDatapoint` implements this
+table as `trust-model@1.0.0` — pure, additive, each dimension awarding an integer 0..max,
+returning `{ value, band, breakdown[] }` where each `breakdown` entry is
+`{ dimension, max, awarded, rationale }`. Band thresholds are fixed and documented
+(`high ≥ 75`, `medium 50–74`, `low < 50`). Scores are stored immutably and version-chained
+in `trust_score` (`supersedesId`); a recompute with an unchanged input digest is a no-op.
+The companion data-quality engine `evaluateDatapointQuality` (`quality-rules@1.0.0`, 12
+`DataQualityIssueKind`s) and `detectAnomalies` (`anomaly-detector@1.0.0`: modified z-score
+over history + peers, period-over-period step) are likewise pure and versioned. See
+[data-model.md](data-model.md#trust-engine-phase-6) and
+[ADR-006](decisions/ADR-006-trust-score-model.md).
+
 ### Compliance
 
 See [compliance-architecture.md](compliance-architecture.md). Entities: `Regulation`,

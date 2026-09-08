@@ -92,13 +92,75 @@ export const METHODOLOGY_QUALITY_TIER: Record<Methodology, number> = {
   spend_based: 1,
 };
 
-export const JOB_STATE = [
-  'queued',
-  'processing',
-  'completed',
-  'failed',
-  'retrying',
+// ---------------------------------------------------------------------------
+// Phase 6 — Trust Engine
+// ---------------------------------------------------------------------------
+
+/**
+ * TRACE Trust Score band. Derived from the 0–100 score by fixed thresholds so
+ * the qualitative label is itself documented, not a moving average.
+ * high ≥ 75, medium 50–74, low < 50.
+ */
+export const TRUST_BAND = ['high', 'medium', 'low'] as const;
+export type TrustBand = (typeof TRUST_BAND)[number];
+
+export function trustBand(value: number): TrustBand {
+  if (value >= 75) return 'high';
+  if (value >= 50) return 'medium';
+  return 'low';
+}
+
+/**
+ * Trust Score dimensions and their maximum contributions
+ * (docs/domain-model.md#trace-trust-score-model). The weight table is
+ * configuration, versioned with the model; historical scores keep their version.
+ */
+export const TRUST_DIMENSION = [
+  'primary_data',
+  'evidence_attached',
+  'verified',
+  'factor_quality',
+  'unit_methodology',
+  'period_freshness',
+  'completeness',
 ] as const;
+export type TrustDimension = (typeof TRUST_DIMENSION)[number];
+
+export const DATA_QUALITY_ISSUE_KIND = [
+  'missing_value',
+  'missing_unit',
+  'missing_evidence',
+  'unverified_evidence',
+  'expired_evidence',
+  'stale_data',
+  'unit_inconsistency',
+  'impossible_value',
+  'duplicate',
+  'conflicting_supplier_report',
+  'outdated_factor',
+  'low_methodology_tier',
+] as const;
+export type DataQualityIssueKind = (typeof DATA_QUALITY_ISSUE_KIND)[number];
+
+/** Issue severity. `critical` blocks trustworthy reporting; `warning` needs a look; `info` is advisory. */
+export const ISSUE_SEVERITY = ['critical', 'warning', 'info'] as const;
+export type IssueSeverity = (typeof ISSUE_SEVERITY)[number];
+
+/**
+ * Data-quality issue lifecycle. `open` → `acknowledged` (seen, not yet fixed) →
+ * `resolved` (fixed; a re-scan that no longer detects it also resolves it) or
+ * `dismissed` (a human judged it not a real problem — recorded, not deleted).
+ */
+export const ISSUE_STATUS = ['open', 'acknowledged', 'resolved', 'dismissed'] as const;
+export type IssueStatus = (typeof ISSUE_STATUS)[number];
+
+export const ANOMALY_METHOD = ['mad_outlier', 'relative_change'] as const;
+export type AnomalyMethod = (typeof ANOMALY_METHOD)[number];
+
+export const ANOMALY_STATUS = ['open', 'explained', 'dismissed'] as const;
+export type AnomalyStatus = (typeof ANOMALY_STATUS)[number];
+
+export const JOB_STATE = ['queued', 'processing', 'completed', 'failed', 'retrying'] as const;
 export type JobState = (typeof JOB_STATE)[number];
 
 export const DISCLOSURE_STATUS = [

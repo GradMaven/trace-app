@@ -28,6 +28,7 @@ import {
   recomputeSupplierPassport,
   runCalculation,
   runExtractionPipeline,
+  runQualityScan,
   transitionEvidence,
   withOrgContext,
   withPlatformContext,
@@ -167,7 +168,51 @@ async function main(): Promise<void> {
 
   await seedAiExtraction();
   console.warn('[seed] Demo document processed through the extraction pipeline (stub provider).');
+
+  await seedTrust();
+  console.warn('[seed] Trust Scores computed and a data-quality scan run for FY2025.');
   console.warn('[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).');
+}
+
+async function seedTrust(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const adminId = DEMO.users.admin.id;
+
+  await withOrgContext(orgId, async (db) => {
+    // Pin the active reporting period so Trust Score freshness is deterministic.
+    await db.organization.update({
+      where: { id: orgId },
+      data: { reportingPeriodConfig: { activePeriod: 'FY2025' } as Prisma.InputJsonValue },
+    });
+
+    const result = await runQualityScan(db, {
+      organizationId: orgId,
+      reportingPeriod: 'FY2025',
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
+
+    await writeAuditLog(db, {
+      organizationId: orgId,
+      actorId: adminId,
+      action: 'seed.trust_scan_completed',
+      resourceType: 'quality_scan',
+      resourceId: result.scanId,
+      before: null,
+      after: {
+        datapointsScored: result.datapointsScored,
+        avgTrustScore: result.avgTrustScore,
+        issuesOpen: result.issuesOpen,
+        anomaliesFound: result.anomaliesFound,
+      },
+      requestId: 'seed',
+    });
+
+    console.warn(
+      `[seed]   → scored ${result.datapointsScored} datapoints (avg ${result.avgTrustScore ?? 'n/a'}), ` +
+        `${result.issuesOpen} issues open, ${result.anomaliesFound} anomalies.`,
+    );
+  });
 }
 
 const DEMO_REPORT_TEXT = `Rheinstahl Walzwerke GmbH — Sustainability Report 2025

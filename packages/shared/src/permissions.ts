@@ -53,6 +53,11 @@ export const PERMISSIONS = {
   'candidate.review': 'Promote or reject candidate datapoints',
   'ai.read': 'View the AI operation log (models, tokens, cost, status)',
 
+  // Trust & data quality
+  'trust.read': 'View Trust Scores, data-quality issues, and anomalies',
+  'trust.run': 'Run Trust Score computation and data-quality scans',
+  'quality.manage': 'Triage data-quality issues and anomalies (acknowledge, resolve, dismiss)',
+
   // Compliance
   'compliance.read': 'View compliance requirements, mappings, and gaps',
   'compliance.manage': 'Confirm mappings and manage disclosure status',

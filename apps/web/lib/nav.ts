@@ -20,7 +20,7 @@ export const NAV: NavSection[] = [
       { label: 'Activity Data', href: '/data/activity', ready: true },
       { label: 'Calculations', href: '/data/calculations', ready: true },
       { label: 'AI Log', href: '/data/ai-jobs', ready: true },
-      { label: 'Data Quality', href: '/data/quality' },
+      { label: 'Data Quality', href: '/data/quality', ready: true },
     ],
   },
   {
