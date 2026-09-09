@@ -1,63 +1,85 @@
-import { Controller, Get, Post, Query } from '@nestjs/common';
+import { Controller, Get, Header, Post, Query, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
+import { z } from 'zod';
 import { paginationQuerySchema, type Page } from '@trace/shared';
-import { verifyAuditChain, withOrgContext } from '@trace/db';
+import {
+  exportAuditLog,
+  queryAuditLog,
+  verifyAuditChain,
+  withOrgContext,
+  type AuditQueryRow,
+} from '@trace/db';
 import { CurrentActor, RequirePermission } from '../../common/decorators';
 import { ZodPipe } from '../../common/zod.pipe';
 import type { AuthenticatedActor } from '../../common/auth.guard';
 
-interface AuditEntryView {
-  id: string;
-  actorId: string | null;
-  action: string;
-  resourceType: string;
-  resourceId: string | null;
-  requestId: string;
-  createdAt: string;
-  hash: string;
-  prevHash: string;
-}
+const filterSchema = paginationQuerySchema.extend({
+  action: z.string().max(64).optional(),
+  actorId: z.string().uuid().optional(),
+  resourceType: z.string().max(64).optional(),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+});
+const exportFilterSchema = filterSchema.omit({ limit: true, cursor: true });
 
 @ApiTags('audit-log')
 @Controller('audit-log')
 export class AuditLogController {
   @Get()
   @RequirePermission('auditlog.read')
-  @ApiOperation({ summary: 'Read the immutable activity log for the active organization.' })
+  @ApiOperation({
+    summary:
+      'Read the immutable activity log (filterable by action prefix, actor, resource, date).',
+  })
   async list(
     @CurrentActor() actor: AuthenticatedActor,
-    @Query(new ZodPipe(paginationQuerySchema)) query: { limit: number; cursor?: string },
-  ): Promise<Page<AuditEntryView>> {
-    return withOrgContext(actor.organizationId!, async (db) => {
-      const rows = await db.auditLog.findMany({
-        where: { organizationId: actor.organizationId! },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: query.limit + 1,
-        ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
-      });
-      const hasMore = rows.length > query.limit;
-      const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
-      return {
-        data: pageRows.map((r) => ({
-          id: r.id,
-          actorId: r.actorId,
-          action: r.action,
-          resourceType: r.resourceType,
-          resourceId: r.resourceId,
-          requestId: r.requestId,
-          createdAt: r.createdAt.toISOString(),
-          hash: r.hash,
-          prevHash: r.prevHash,
-        })),
-        ...(hasMore ? { nextCursor: pageRows[pageRows.length - 1]!.id } : {}),
-      };
-    });
+    @Query(new ZodPipe(filterSchema)) q: z.infer<typeof filterSchema>,
+  ): Promise<Page<AuditQueryRow>> {
+    return withOrgContext(actor.organizationId!, (db) =>
+      queryAuditLog(
+        db,
+        actor.organizationId!,
+        {
+          actionPrefix: q.action,
+          actorId: q.actorId,
+          resourceType: q.resourceType,
+          from: q.from,
+          to: q.to,
+        },
+        { limit: q.limit, cursor: q.cursor },
+      ),
+    );
+  }
+
+  @Get('export')
+  @RequirePermission('auditlog.read')
+  @Header('content-type', 'application/x-ndjson; charset=utf-8')
+  @Header('content-disposition', 'attachment; filename="trace-audit-log.ndjson"')
+  @ApiOperation({ summary: 'Bulk export of the filtered activity log as newline-delimited JSON.' })
+  async export(
+    @CurrentActor() actor: AuthenticatedActor,
+    @Query(new ZodPipe(exportFilterSchema)) q: z.infer<typeof exportFilterSchema>,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<string> {
+    const result = await withOrgContext(actor.organizationId!, (db) =>
+      exportAuditLog(db, actor.organizationId!, {
+        actionPrefix: q.action,
+        actorId: q.actorId,
+        resourceType: q.resourceType,
+        from: q.from,
+        to: q.to,
+      }),
+    );
+    res.setHeader('x-trace-rows', String(result.rows));
+    if (result.truncated) res.setHeader('x-trace-truncated', 'true');
+    return result.ndjson;
   }
 
   @Post('verify')
   @RequirePermission('auditlog.read')
   @ApiOperation({ summary: 'Recompute the hash chain and report the first break, if any.' })
-  async verify(
+  verify(
     @CurrentActor() actor: AuthenticatedActor,
   ): Promise<{ intact: boolean; brokenAt: number; count: number }> {
     return withOrgContext(actor.organizationId!, (db) =>

@@ -70,6 +70,13 @@ export const RETENTION_TARGETS: RetentionTarget[] = [
     min: 7,
     description: 'Finished export bundles and their metadata.',
   },
+  {
+    key: 'usage_event',
+    label: 'Usage events',
+    dateField: 'occurredAt',
+    min: 30,
+    description: 'Per-occurrence metering records. Period counters are kept.',
+  },
 ];
 
 const BY_KEY = new Map(RETENTION_TARGETS.map((t) => [t.key, t]));

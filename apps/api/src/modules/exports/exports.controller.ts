@@ -13,7 +13,7 @@ import {
   type RunExportResult,
 } from '@trace/db';
 import type { StorageService } from '@trace/storage';
-import { CurrentActor, RequirePermission } from '../../common/decorators';
+import { CurrentActor, Metered, RequirePermission } from '../../common/decorators';
 import { ZodPipe } from '../../common/zod.pipe';
 import type { AuthenticatedActor } from '../../common/auth.guard';
 import { STORAGE_SERVICE } from '../storage/storage.module';
@@ -41,6 +41,7 @@ export class ExportsController {
   }
 
   @Post()
+  @Metered('export_job')
   @HttpCode(201)
   @ApiOperation({
     summary:

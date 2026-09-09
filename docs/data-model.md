@@ -679,6 +679,58 @@ retention_run(id, organization_id, policy_id NULL, target, mode (dry_run|apply),
   `current_org()` (migration `0026_governance_rls`). `user_mfa` is not RLS'd —
   identity, keyed on the user, like `session`.
 
+### Usage metering & plan quotas (Phase 13c)
+
+```
+plan(key PK, name, quotas jsonb, soft_warn_pct int, is_default bool)   -- global catalogue
+
+subscription(organization_id PK, plan_key -> plan.key, status default 'active',
+             current_period text, started_at, created_at, updated_at)
+
+usage_counter(id, organization_id, period text, metric text, value int,
+              last_event_at NULL, created_at, updated_at,
+              UNIQUE(organization_id, period, metric))
+
+usage_event(id, organization_id, period text, metric text, quantity int,
+            route NULL, occurred_at)
+```
+
+- **`@trace/domain/access`** (pure): `metering.ts` — `USAGE_METRICS`
+  (`api_request`, `ai_job`, `calculation_run`, `export_job`, `seats` [gauge]),
+  `ENFORCED_METRICS` (the three that 429), `PLAN_TIERS` (`free` / `growth` /
+  `enterprise` — `{ quotas: { metric: monthlyLimit }, softWarnPct }`; a metric
+  absent from `quotas` is unlimited), `billingPeriodKey(at)` → `YYYY-MM` UTC,
+  `billingPeriodBounds`, `evaluateMetric` / `evaluateUsage` (`used`, `quota`,
+  `pct`, `state` ∈ `ok`/`warn`/`over`), `wouldExceedQuota`, `crossedSoftWarn`
+  (`prev < threshold ≤ next`). `audit-egress.ts` — `normalizeAuditFilter`
+  (regex-guards `actionPrefix` / `resourceType`, parses dates — a filter can
+  never be an injection vector), `toNdjson`, `AUDIT_EXPORT_MAX_ROWS = 20 000`.
+- **`@trace/db/metering.ts`**: `loadPlans` (idempotent upsert from `PLAN_TIERS`
+  — global). `ensureSubscription` (get-or-create; rolls `current_period` to the
+  live period if stale). `setPlan` (validates the key; upserts; audit
+  `billing.plan_changed`). `recordUsage(db, {organizationId, metric, quantity=1,
+  route?})` — `usage_counter` upsert `value += quantity`; a `usage_event` row for
+  every metric except `api_request`; if the write **crosses** the plan's
+  soft-warn threshold, one `usage.threshold_reached` audit entry (which fans out
+  to the webhook of the same name). `recordApiRequest(prisma, orgId)` — the raw
+  hot-path counter bump used by the API interceptor. `currentUsage` (subscription
+  + plan + `evaluateUsage` over the period's counters, with `seats` as a live
+  `membership` count). `checkQuota(db, org, metric)` → `{ allowed, state, used,
+  quota }` for the `QuotaGuard`.
+- **`@trace/db/audit.ts`**: `queryAuditLog(db, org, filter, {limit, cursor})`
+  (newest-first, cursor-paged) and `exportAuditLog(db, org, filter)` →
+  `{ ndjson, rows, truncated }` (oldest-first so the file is chain-verifiable;
+  capped at `AUDIT_EXPORT_MAX_ROWS`).
+- API: a global `UsageInterceptor` records `api_request` (and the
+  `@Metered(metric)` increment) fire-and-forget on every 2xx with an active org;
+  a `QuotaGuard` blocks `@Metered` routes whose metric is enforced with
+  `429 quota.exceeded`. `provisionOrganization` calls `loadPlans` +
+  `ensureSubscription`.
+- RLS: `subscription` / `usage_counter` / `usage_event` are `FORCE`
+  `current_org()` (migration `0028_metering_rls`); the interceptor and the worker
+  roll-forward open `withOrgContext`. `plan` is the global catalogue, not RLS'd.
+  `usage_event` is a Phase-13b retention target (min 30 days).
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

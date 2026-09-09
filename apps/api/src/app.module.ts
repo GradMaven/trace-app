@@ -1,9 +1,11 @@
 import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
-import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { RequestContextMiddleware } from './common/request-context';
 import { AuthGuard } from './common/auth.guard';
 import { CsrfGuard } from './common/csrf.guard';
 import { PermissionsGuard } from './common/permissions.guard';
+import { QuotaGuard } from './common/quota.guard';
+import { UsageInterceptor } from './common/usage.interceptor';
 import { AppExceptionFilter } from './common/app-exception.filter';
 import { CatalogBootstrap } from './bootstrap/catalog.bootstrap';
 import { HealthModule } from './modules/health/health.module';
@@ -37,6 +39,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { MfaModule } from './modules/mfa/mfa.module';
 import { ExportsModule } from './modules/exports/exports.module';
 import { GovernanceModule } from './modules/governance/governance.module';
+import { UsageModule } from './modules/usage/usage.module';
 
 @Module({
   imports: [
@@ -71,6 +74,7 @@ import { GovernanceModule } from './modules/governance/governance.module';
     MfaModule,
     ExportsModule,
     GovernanceModule,
+    UsageModule,
   ],
   providers: [
     CatalogBootstrap,
@@ -79,6 +83,8 @@ import { GovernanceModule } from './modules/governance/governance.module';
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: CsrfGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
+    { provide: APP_GUARD, useClass: QuotaGuard },
+    { provide: APP_INTERCEPTOR, useClass: UsageInterceptor },
   ],
 })
 export class AppModule implements NestModule {

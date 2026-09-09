@@ -74,6 +74,7 @@ export const NAV: NavSection[] = [
       { label: 'Integrations', href: '/settings/integrations', ready: true },
       { label: 'Security', href: '/settings/security', ready: true },
       { label: 'Data & Retention', href: '/settings/data', ready: true },
+      { label: 'Usage & Plan', href: '/settings/usage', ready: true },
       { label: 'Organization', href: '/settings/organization' },
     ],
   },

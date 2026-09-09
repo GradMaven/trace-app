@@ -13,7 +13,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { paginationQuerySchema, type Page } from '@trace/shared';
 import { getContext } from '@trace/db';
-import { CurrentActor, RequirePermission } from '../../common/decorators';
+import { CurrentActor, Metered, RequirePermission } from '../../common/decorators';
 import { ZodPipe } from '../../common/zod.pipe';
 import type { AuthenticatedActor } from '../../common/auth.guard';
 import { DocumentsService, type DocumentView, type UploadedFile as UF } from './documents.service';
@@ -41,7 +41,9 @@ export class DocumentsController {
   @RequirePermission('evidence.create')
   @HttpCode(201)
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Upload a document (multipart field "file"). Validated, scanned, stored.' })
+  @ApiOperation({
+    summary: 'Upload a document (multipart field "file"). Validated, scanned, stored.',
+  })
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: UPLOAD_HARD_LIMIT } }))
   upload(
     @CurrentActor() actor: AuthenticatedActor,
@@ -89,24 +91,26 @@ export class DocumentsController {
   @Delete(':id')
   @RequirePermission('evidence.update')
   @HttpCode(204)
-  async remove(
-    @CurrentActor() actor: AuthenticatedActor,
-    @Param('id') id: string,
-  ): Promise<void> {
+  async remove(@CurrentActor() actor: AuthenticatedActor, @Param('id') id: string): Promise<void> {
     await this.documents.remove(actor.organizationId!, id, actor.userId, this.rid());
   }
 
   @Post(':id/process')
   @RequirePermission('document.process')
+  @Metered('ai_job')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Run the AI extraction pipeline (parse → classify → extract candidates).' })
+  @ApiOperation({
+    summary: 'Run the AI extraction pipeline (parse → classify → extract candidates).',
+  })
   process(@CurrentActor() actor: AuthenticatedActor, @Param('id') id: string): Promise<unknown> {
     return this.documents.process(actor.organizationId!, id, actor.userId, this.rid());
   }
 
   @Get(':id/extraction')
   @RequirePermission('candidate.read')
-  @ApiOperation({ summary: 'Extraction state, classification, and candidate datapoints for a document.' })
+  @ApiOperation({
+    summary: 'Extraction state, classification, and candidate datapoints for a document.',
+  })
   extraction(@CurrentActor() actor: AuthenticatedActor, @Param('id') id: string): Promise<unknown> {
     return this.documents.extraction(actor.organizationId!, id);
   }

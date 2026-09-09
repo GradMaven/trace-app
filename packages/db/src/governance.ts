@@ -477,6 +477,12 @@ async function sweepTarget(
       const deleted = apply ? (await db.exportJob.deleteMany({ where: w })).count : 0;
       return { matched, deleted };
     }
+    case 'usage_event': {
+      const w = { organizationId, occurredAt: { lt: cutoff } };
+      const matched = await db.usageEvent.count({ where: w });
+      const deleted = apply ? (await db.usageEvent.deleteMany({ where: w })).count : 0;
+      return { matched, deleted };
+    }
     default:
       throw AppError.unprocessable(
         'retention.unknown_target',

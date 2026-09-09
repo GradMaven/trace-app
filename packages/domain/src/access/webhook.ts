@@ -26,6 +26,7 @@ export const WEBHOOK_EVENTS = {
   'document.extraction_completed': 'AI extraction finished for a document',
   'supplier.request_submitted': 'A supplier submitted an information request',
   'supplier.passport_recomputed': 'A Supplier Passport was recomputed',
+  'usage.threshold_reached': 'A metered metric crossed its plan soft-warn threshold',
 } as const;
 
 export type WebhookEvent = keyof typeof WEBHOOK_EVENTS;
@@ -53,6 +54,7 @@ const AUDIT_ACTION_TO_EVENT: Record<string, WebhookEvent> = {
   'document.extraction_completed': 'document.extraction_completed',
   'supplier.request_submitted': 'supplier.request_submitted',
   'supplier.passport_recomputed': 'supplier.passport_recomputed',
+  'usage.threshold_reached': 'usage.threshold_reached',
 };
 
 /** Map an audit-log action string to a webhook event, or null if it is not one. */

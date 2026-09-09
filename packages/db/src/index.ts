@@ -11,8 +11,26 @@ export type { TenantDb, Prisma, PrismaClient } from './client';
 export { runWithContext, getContext, requireContext, requireOrganizationId } from './context';
 export type { RequestContext } from './context';
 
-export { writeAuditLog, verifyAuditChain } from './audit';
-export type { WriteAuditInput } from './audit';
+export { writeAuditLog, verifyAuditChain, queryAuditLog, exportAuditLog } from './audit';
+export type { WriteAuditInput, AuditQueryRow } from './audit';
+
+export {
+  loadPlans,
+  ensureSubscription,
+  setPlan,
+  recordUsage,
+  recordApiRequest,
+  currentUsage,
+  checkQuota,
+  listPlans,
+} from './metering';
+export type {
+  SubscriptionView,
+  RecordUsageArgs,
+  RecordUsageResult,
+  CurrentUsage,
+  QuotaCheck,
+} from './metering';
 
 export {
   PROVISIONING_ROLE_KEYS,

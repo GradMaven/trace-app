@@ -142,6 +142,9 @@ model Organization {
   exportJobs          ExportJob[]
   retentionPolicies   RetentionPolicy[]
   retentionRuns       RetentionRun[]
+  subscription        Subscription?
+  usageCounters       UsageCounter[]
+  usageEvents         UsageEvent[]
 
   @@map("organization")
 }
@@ -1955,4 +1958,76 @@ enum RetentionMode {
   apply
 
   @@map("retention_mode")
+}
+
+// ===========================================================================
+// Usage metering & plan quotas (Phase 13c)
+// ===========================================================================
+
+/// The plan catalogue — global, repository-scoped (like the emission-factor
+/// library), loaded from @trace/domain PLAN_TIERS by `loadPlans`. `quotas` is a
+/// `{ metric: monthlyLimit }` map; a metric absent from it is unlimited.
+model Plan {
+  key         String  @id
+  name        String
+  quotas      Json    @default("{}")
+  softWarnPct Int     @default(80) @map("soft_warn_pct")
+  isDefault   Boolean @default(false) @map("is_default")
+
+  subscriptions Subscription[]
+
+  @@map("plan")
+}
+
+/// One organization's plan assignment. There is no payment integration — the
+/// plan is set by an operator / admin and drives quota enforcement + the usage
+/// dashboard. `currentPeriod` (`YYYY-MM`) is the cursor the worker rolls forward.
+model Subscription {
+  organizationId String   @id @map("organization_id") @db.Uuid
+  planKey        String   @map("plan_key")
+  status         String   @default("active")
+  currentPeriod  String   @map("current_period")
+  startedAt      DateTime @default(now()) @map("started_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         Plan         @relation(fields: [planKey], references: [key])
+
+  @@map("subscription")
+}
+
+/// A period-bucketed running total for one metric. Upserted on the hot path
+/// (`value += quantity`); one row per `(org, period, metric)`.
+model UsageCounter {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  period         String
+  metric         String
+  value          Int      @default(0)
+  lastEventAt    DateTime? @map("last_event_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, period, metric])
+  @@map("usage_counter")
+}
+
+/// An append-only per-occurrence record for the non-`api_request` metrics
+/// (AI jobs, calculations, exports). Subject to data retention (`usage_event`).
+model UsageEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  period         String
+  metric         String
+  quantity       Int      @default(1)
+  route          String?
+  occurredAt     DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, occurredAt])
+  @@map("usage_event")
 }

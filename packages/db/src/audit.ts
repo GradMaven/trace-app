@@ -1,11 +1,16 @@
 import {
   appendEntry,
+  AUDIT_EXPORT_MAX_ROWS,
   buildWebhookEventPayload,
   GENESIS_HASH,
+  normalizeAuditFilter,
+  toNdjson,
   verifyChain,
   webhookEventForAuditAction,
   WEBHOOK_MAX_ATTEMPTS,
   type AuditEntryInput,
+  type AuditExportRow,
+  type AuditQueryFilter,
 } from '@trace/domain';
 import { Prisma } from '@prisma/client';
 import { type TenantDb } from './client';
@@ -178,4 +183,98 @@ export async function verifyAuditChain(
   );
 
   return { ...result, count: rows.length };
+}
+
+// ---------------------------------------------------------------------------
+// Audit-log egress (Phase 13c) — filtered query + NDJSON bulk export
+// ---------------------------------------------------------------------------
+
+function auditWhere(organizationId: string, filter: AuditQueryFilter): Prisma.AuditLogWhereInput {
+  const f = normalizeAuditFilter(filter);
+  const where: Prisma.AuditLogWhereInput = { organizationId };
+  if (f.actionPrefix) where.action = { startsWith: f.actionPrefix };
+  if (f.actorId) where.actorId = f.actorId;
+  if (f.resourceType) where.resourceType = f.resourceType;
+  if (f.from || f.to) {
+    where.createdAt = {};
+    if (f.from) where.createdAt.gte = f.from;
+    if (f.to) where.createdAt.lt = f.to;
+  }
+  return where;
+}
+
+export interface AuditQueryRow {
+  id: string;
+  actorId: string | null;
+  action: string;
+  resourceType: string;
+  resourceId: string | null;
+  requestId: string;
+  createdAt: string;
+  hash: string;
+  prevHash: string;
+}
+
+/** Filtered, cursor-paged read of the activity log (newest first). */
+export async function queryAuditLog(
+  db: TenantDb,
+  organizationId: string,
+  filter: AuditQueryFilter,
+  page: { limit: number; cursor?: string },
+): Promise<{ data: AuditQueryRow[]; nextCursor?: string }> {
+  const rows = await db.auditLog.findMany({
+    where: auditWhere(organizationId, filter),
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: page.limit + 1,
+    ...(page.cursor ? { cursor: { id: page.cursor }, skip: 1 } : {}),
+  });
+  const hasMore = rows.length > page.limit;
+  const slice = hasMore ? rows.slice(0, page.limit) : rows;
+  return {
+    data: slice.map((r) => ({
+      id: r.id,
+      actorId: r.actorId,
+      action: r.action,
+      resourceType: r.resourceType,
+      resourceId: r.resourceId,
+      requestId: r.requestId,
+      createdAt: r.createdAt.toISOString(),
+      hash: r.hash,
+      prevHash: r.prevHash,
+    })),
+    ...(hasMore ? { nextCursor: slice[slice.length - 1]!.id } : {}),
+  };
+}
+
+/**
+ * Bulk export of matching entries as newline-delimited JSON (oldest first, so
+ * the file is chain-verifiable). Capped at {@link AUDIT_EXPORT_MAX_ROWS}.
+ */
+export async function exportAuditLog(
+  db: TenantDb,
+  organizationId: string,
+  filter: AuditQueryFilter,
+): Promise<{ ndjson: string; rows: number; truncated: boolean }> {
+  const rows = await db.auditLog.findMany({
+    where: auditWhere(organizationId, filter),
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    take: AUDIT_EXPORT_MAX_ROWS + 1,
+  });
+  const truncated = rows.length > AUDIT_EXPORT_MAX_ROWS;
+  const slice = truncated ? rows.slice(0, AUDIT_EXPORT_MAX_ROWS) : rows;
+  const exportRows: AuditExportRow[] = slice.map((r) => ({
+    id: r.id,
+    organizationId: r.organizationId,
+    actorId: r.actorId,
+    action: r.action,
+    resourceType: r.resourceType,
+    resourceId: r.resourceId,
+    before: r.before ?? null,
+    after: r.after ?? null,
+    requestId: r.requestId,
+    createdAt: r.createdAt.toISOString(),
+    prevHash: r.prevHash,
+    hash: r.hash,
+  }));
+  return { ndjson: toNdjson(exportRows), rows: exportRows.length, truncated };
 }

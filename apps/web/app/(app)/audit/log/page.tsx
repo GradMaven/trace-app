@@ -1,5 +1,6 @@
 import { serverFetch } from '@/lib/server-api';
 import { VerifyChainButton } from './verify-button';
+import { AuditLogTools } from './audit-log-tools';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,8 +16,15 @@ interface AuditEntry {
   prevHash: string;
 }
 
-export default async function AuditLogPage() {
-  const res = await serverFetch<{ data: AuditEntry[]; nextCursor?: string }>('/audit-log?limit=50');
+export default async function AuditLogPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ action?: string }>;
+}) {
+  const { action } = await searchParams;
+  const qs = new URLSearchParams({ limit: '100' });
+  if (action) qs.set('action', action);
+  const res = await serverFetch<{ data: AuditEntry[]; nextCursor?: string }>(`/audit-log?${qs}`);
   const rows = res.data?.data ?? [];
 
   return (
@@ -28,6 +36,7 @@ export default async function AuditLogPage() {
       <p className="muted" style={{ marginTop: 0 }}>
         Append-only and hash-chained. Every consequential change is recorded here.
       </p>
+      <AuditLogTools action={action ?? ''} />
       {res.error && <p style={{ color: 'var(--critical)' }}>{res.error.message}</p>}
       <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
         <table>

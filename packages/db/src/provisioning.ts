@@ -7,6 +7,7 @@ import {
   type RoleKey,
 } from '@trace/shared';
 import { writeAuditLog } from './audit';
+import { ensureSubscription, loadPlans } from './metering';
 import { type TenantDb } from './client';
 
 /**
@@ -100,6 +101,10 @@ export async function provisionOrganization(
       baseCurrency: (input.baseCurrency ?? 'EUR').toUpperCase(),
     },
   });
+
+  // Billing plan catalogue + a default subscription (Phase 13c).
+  await loadPlans(db);
+  await ensureSubscription(db, input.organizationId);
 
   const roleIdsByKey: Record<string, string> = {};
   for (const key of DEFAULT_ORG_ROLE_KEYS) {

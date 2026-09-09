@@ -6,6 +6,7 @@ import { QUEUES, type DocumentProcessingJob, type NotificationJob } from './queu
 import { processDocument } from './processors/document-processing';
 import { runWebhookDispatchPass } from './processors/webhook-dispatch';
 import { runRetentionSweep } from './processors/retention';
+import { runUsageRollForward } from './processors/usage';
 
 const env = loadEnv();
 const log = pino({ level: env.LOG_LEVEL, name: 'worker' });
@@ -100,10 +101,31 @@ const retentionTimer = setInterval(() => {
 }, RETENTION_SWEEP_INTERVAL_MS);
 retentionTimer.unref();
 
+// Usage period roll-forward (Phase 13c): advance each org's billing-period
+// cursor at the month boundary. Cheap; a no-op mid-month.
+const USAGE_ROLLFORWARD_INTERVAL_MS = 6 * 60 * 60_000;
+let usageRollRunning = false;
+const usageTimer = setInterval(() => {
+  if (usageRollRunning) return;
+  usageRollRunning = true;
+  runUsageRollForward()
+    .catch((err) =>
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'usage roll-forward failed',
+      ),
+    )
+    .finally(() => {
+      usageRollRunning = false;
+    });
+}, USAGE_ROLLFORWARD_INTERVAL_MS);
+usageTimer.unref();
+
 async function shutdown(signal: string): Promise<void> {
   log.info({ signal }, 'shutting down worker');
   clearInterval(webhookTimer);
   clearInterval(retentionTimer);
+  clearInterval(usageTimer);
   await Promise.all([notificationsWorker.close(), documentWorker.close()]);
   await Promise.all([notificationsQueue.close(), documentProcessingQueue.close()]);
   await connection.quit().catch(() => undefined);

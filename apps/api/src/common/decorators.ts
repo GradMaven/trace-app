@@ -7,6 +7,15 @@ export const PUBLIC_KEY = 'trace:public';
 /** Marks a route as not requiring an authenticated session. */
 export const Public = (): MethodDecorator & ClassDecorator => SetMetadata(PUBLIC_KEY, true);
 
+export const METERED_KEY = 'trace:metered';
+/**
+ * Records a usage-metric increment for this route on a 2xx response and, for the
+ * enforced metrics, blocks the request with `429 quota.exceeded` when the
+ * active organization is over its plan quota (Phase 13c).
+ */
+export const Metered = (metric: string): MethodDecorator & ClassDecorator =>
+  SetMetadata(METERED_KEY, metric);
+
 export const MFA_EXEMPT_KEY = 'trace:mfa-exempt';
 /**
  * Allows an authenticated-but-not-yet-MFA-verified session to reach this route

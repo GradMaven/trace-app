@@ -24,3 +24,5 @@ export * from './access/role';
 export * from './access/totp';
 export * from './access/export-bundle';
 export * from './access/retention';
+export * from './access/metering';
+export * from './access/audit-egress';

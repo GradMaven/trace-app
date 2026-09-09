@@ -24,6 +24,8 @@ export const PERMISSIONS = {
   'webhook.manage': 'Configure outbound webhook endpoints and inspect deliveries',
   'security.manage': 'Manage organization security settings — MFA enforcement, data retention',
   'data.export': 'Export the organization’s data as a downloadable bundle',
+  'usage.read': 'View usage, quotas, and the billing plan',
+  'billing.manage': 'Change the organization’s billing plan',
 
   // Suppliers
   'supplier.read': 'View suppliers',

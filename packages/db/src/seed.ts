@@ -14,7 +14,7 @@
  */
 import { createHash } from 'node:crypto';
 import { createAIProvider } from '@trace/ai';
-import { QUESTIONNAIRE_VERSION } from '@trace/domain';
+import { billingPeriodKey, QUESTIONNAIRE_VERSION } from '@trace/domain';
 import { createStorageService, documentStorageKey } from '@trace/storage';
 import type { Prisma } from './index';
 import {
@@ -40,10 +40,12 @@ import {
   runAuditSimulation,
   runCalculation,
   runComplianceEvaluation,
+  recordUsage,
   runExport,
   runExtractionPipeline,
   runQualityScan,
   runRetention,
+  setPlan,
   upsertRetentionPolicy,
   transitionEvidence,
   updateFinding,
@@ -217,9 +219,55 @@ async function main(): Promise<void> {
   await seedGovernance();
   console.warn('[seed] Data export produced and retention policies set (dry-run recorded).');
 
+  await seedMetering();
+  console.warn('[seed] Growth plan assigned and current-period usage recorded.');
+
   console.warn(
     '[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).',
   );
+}
+
+async function seedMetering(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const adminId = DEMO.users.admin.id;
+
+  await withOrgContext(orgId, async (db) => {
+    await setPlan(db, {
+      organizationId: orgId,
+      planKey: 'growth',
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
+
+    // Populate the current-period counters so the dashboard is not empty.
+    const batches: Array<[string, number]> = [
+      ['api_request', 4200],
+      ['ai_job', 6],
+      ['calculation_run', 41],
+      ['export_job', 1],
+    ];
+    const period = billingPeriodKey();
+    for (const [metric, n] of batches) {
+      await db.usageCounter.upsert({
+        where: { organizationId_period_metric: { organizationId: orgId, period, metric } },
+        create: { organizationId: orgId, period, metric, value: n, lastEventAt: new Date() },
+        update: { value: n, lastEventAt: new Date() },
+      });
+    }
+    // A couple of real usage events for the non-request metrics.
+    await recordUsage(db, {
+      organizationId: orgId,
+      metric: 'ai_job',
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
+    await recordUsage(db, {
+      organizationId: orgId,
+      metric: 'export_job',
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
+  });
 }
 
 async function seedGovernance(): Promise<void> {

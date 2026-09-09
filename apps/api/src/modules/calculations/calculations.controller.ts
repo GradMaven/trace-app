@@ -3,7 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { GHG_SCOPE, METHODOLOGY, type Page } from '@trace/shared';
 import { getContext } from '@trace/db';
-import { CurrentActor, RequirePermission } from '../../common/decorators';
+import { CurrentActor, Metered, RequirePermission } from '../../common/decorators';
 import { ZodPipe } from '../../common/zod.pipe';
 import type { AuthenticatedActor } from '../../common/auth.guard';
 import { CalculationsService, type CalculationListItem } from './calculations.service';
@@ -34,6 +34,7 @@ export class CalculationsController {
 
   @Post('run')
   @RequirePermission('calculation.run')
+  @Metered('calculation_run')
   @HttpCode(201)
   @ApiOperation({ summary: 'Run a deterministic emissions calculation for an activity.' })
   run(
@@ -62,7 +63,9 @@ export class CalculationsController {
   @Post(':id/reproduce')
   @RequirePermission('calculation.read')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Re-run the engine on the stored inputs and confirm the result matches.' })
+  @ApiOperation({
+    summary: 'Re-run the engine on the stored inputs and confirm the result matches.',
+  })
   reproduce(@CurrentActor() actor: AuthenticatedActor, @Param('id') id: string): Promise<unknown> {
     return this.calculations.reproduce(actor.organizationId!, id);
   }
@@ -70,7 +73,9 @@ export class CalculationsController {
   @Post(':id/recompute')
   @RequirePermission('calculation.run')
   @HttpCode(201)
-  @ApiOperation({ summary: 'Re-select the factor and re-run; freezes the old row, chains a new one.' })
+  @ApiOperation({
+    summary: 'Re-select the factor and re-run; freezes the old row, chains a new one.',
+  })
   recompute(@CurrentActor() actor: AuthenticatedActor, @Param('id') id: string): Promise<unknown> {
     return this.calculations.recompute(actor.organizationId!, actor.userId, id, this.rid());
   }
@@ -78,10 +83,7 @@ export class CalculationsController {
   @Post(':id/approve')
   @RequirePermission('calculation.approve')
   @HttpCode(204)
-  async approve(
-    @CurrentActor() actor: AuthenticatedActor,
-    @Param('id') id: string,
-  ): Promise<void> {
+  async approve(@CurrentActor() actor: AuthenticatedActor, @Param('id') id: string): Promise<void> {
     await this.calculations.approve(actor.organizationId!, id, actor.userId, this.rid());
   }
 }

@@ -29,6 +29,28 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 13c — Usage metering & quotas (landed).** On top of Phase 13b: per-organization
+usage counters and plan-quota enforcement (no payment integration). **`@trace/domain/access`**
+gains (pure) `metering.ts` — the metric catalogue (`api_request` / `ai_job` /
+`calculation_run` / `export_job` / `seats`), plan tiers (free / growth / enterprise) with a
+per-metric monthly quota and a soft-warn percentage, the `YYYY-MM` billing-period key, and
+the `ok`/`warn`/`over` evaluation — and `audit-egress.ts` (a shape-guarded audit filter + an
+NDJSON serialiser). `@trace/db` adds `metering.ts` (`recordUsage` — a period-counter upsert
+plus a `usage_event` for the low-frequency metrics, and a `usage.threshold_reached` audit
+entry on the soft-warn crossing that fans out to webhooks; `currentUsage`, `checkQuota`,
+`setPlan`) and `queryAuditLog` / `exportAuditLog` (filtered, cursor-paged, NDJSON). New
+`plan` (global catalogue), `subscription`, `usage_counter`, `usage_event` tables;
+`provisionOrganization` now seeds the plan catalogue and a default subscription. The API
+gains a fire-and-forget `UsageInterceptor` (counts every authenticated request plus the
+`@Metered(metric)` routes) and a `QuotaGuard` that returns **`429 quota.exceeded`** for the
+three enforced metrics; `GET /usage` + `PUT /usage/plan`; and, on `/audit-log`, filters plus
+a new `GET /audit-log/export` (newline-delimited JSON, capped at 20 000 rows). The worker
+rolls each subscription's billing period forward at the month boundary. Web adds Settings →
+Usage & Plan and an action-prefix filter + NDJSON export on the Activity Log. Builds,
+typechecks, lints and unit tests are green; the Postgres-dependent integration suites (…,
+metering) run in CI. SSO, SCIM, audit-log *streaming*, and a billing provider remain open —
+see [docs/roadmap.md](docs/roadmap.md).
+
 **Phase 13b — Enterprise identity & governance (landed).** On top of Phase 13a: account
 security and data governance. **`@trace/domain/access`** gains (pure) `totp.ts` (base32 +
 RFC-6238 TOTP + a drift-tolerant verifier + `otpauth://` URI + single-use recovery codes),
