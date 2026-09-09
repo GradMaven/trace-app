@@ -172,5 +172,59 @@ export const DISCLOSURE_STATUS = [
 ] as const;
 export type DisclosureStatus = (typeof DISCLOSURE_STATUS)[number];
 
+// ---------------------------------------------------------------------------
+// Phase 7 — Compliance
+// ---------------------------------------------------------------------------
+
+/**
+ * Objective status of a required disclosure / datapoint mapping. TRACE never
+ * says "compliant" (brief §44, compliance-architecture.md). `review_required` is
+ * an override state — data exists but has a problem a human must judge.
+ */
+export const COMPLIANCE_STATUS = [
+  'not_started',
+  'data_available',
+  'evidence_available',
+  'mapping_complete',
+  'review_required',
+] as const;
+export type ComplianceStatus = (typeof COMPLIANCE_STATUS)[number];
+
+/** Ladder rank for the non-override states; `review_required` is handled separately. */
+export const COMPLIANCE_STATUS_RANK: Record<ComplianceStatus, number> = {
+  not_started: 0,
+  data_available: 1,
+  evidence_available: 2,
+  mapping_complete: 3,
+  review_required: 1,
+};
+
+/** Why a required datapoint is not yet `mapping_complete`. */
+export const GAP_REASON = [
+  'missing_data',
+  'no_evidence',
+  'expired_evidence',
+  'conflicting_data',
+  'outdated_factor',
+  'unit_mismatch',
+  'low_trust_score',
+  'reporting_period_mismatch',
+  'unconfirmed_mapping',
+] as const;
+export type GapReason = (typeof GAP_REASON)[number];
+
+/** Lifecycle of an organization-level control expected for a requirement. */
+export const CONTROL_STATUS = [
+  'not_implemented',
+  'implemented',
+  'needs_testing',
+  'passed',
+  'failed',
+] as const;
+export type ControlStatus = (typeof CONTROL_STATUS)[number];
+
+export const REQUIRED_DATAPOINT_CARDINALITY = ['single', 'multiple'] as const;
+export type RequiredDatapointCardinality = (typeof REQUIRED_DATAPOINT_CARDINALITY)[number];
+
 export const MEMBERSHIP_STATUS = ['invited', 'active', 'suspended'] as const;
 export type MembershipStatus = (typeof MEMBERSHIP_STATUS)[number];

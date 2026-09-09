@@ -372,6 +372,60 @@ quality_scan(id, organization_id, reporting_period NULL, datapoints_scored,
 - RLS (`FORCE`, `current_org()`) on `trust_score`, `data_quality_issue`, `anomaly`,
   `quality_scan` — migration `0012_trust_rls`.
 
+### Compliance (Phase 7)
+
+```
+-- global rule store (no organization_id; repository-scoped, NOT RLS'd — like emission_factor)
+regulation(id, key, name, jurisdiction, description, notice, rule_store_version, loaded_at,
+           UNIQUE(key, rule_store_version))
+requirement(id, regulation_id, code, title, description, rule_store_version,
+            UNIQUE(regulation_id, code))
+disclosure(id, requirement_id, code, title, guidance, rule_store_version,
+           UNIQUE(requirement_id, code, rule_store_version))
+required_datapoint(id, disclosure_id, key, metric_key, unit NULL, cardinality, subject_scope,
+                   aggregation, min_trust_score NULL, label, conditions jsonb, rule_store_version,
+                   UNIQUE(key, rule_store_version))
+evidence_requirement(id, disclosure_id, key, description, acceptable_types text[],
+                     rule_store_version, UNIQUE(disclosure_id, key, rule_store_version))
+
+-- tenant-owned results (RLS)
+compliance_control(id, organization_id, requirement_id NULL, rule_store_version, key, name,
+                   description, owner NULL, status control_status, last_tested_at NULL, note NULL,
+                   created_at, updated_at, UNIQUE(organization_id, key))
+compliance_mapping(id, organization_id, required_datapoint_id, disclosure_id, rule_store_version,
+                   reporting_period NULL, status compliance_status, gap_reasons text[],
+                   datapoint_ids uuid[], calculation_ids uuid[], evidence_ids uuid[],
+                   resolved_value numeric(30,6) NULL, resolved_value_text NULL, trust_score int NULL,
+                   confirmed bool, confirmed_by_user_id NULL, confirmed_at NULL, note NULL, computed_at,
+                   UNIQUE(organization_id, required_datapoint_id, rule_store_version))
+disclosure_status(id, organization_id, disclosure_id, rule_store_version, reporting_period NULL,
+                  status compliance_status, required_total, satisfied, readiness_pct numeric(5,1),
+                  computed_at, UNIQUE(organization_id, disclosure_id, rule_store_version))
+compliance_run(id, organization_id, rule_store_version, reporting_period NULL, disclosures_evaluated,
+               required_datapoints, mappings_written, readiness_pct numeric(5,1), ran_by_user_id NULL,
+               started_at, completed_at NULL, duration_ms)
+```
+
+- **`@trace/compliance`** (pure, `@trace/shared` only) holds the versioned rule store as
+  **frozen typed data** (`rules/esrs-2026-1.ts`, version `esrs@2026.1` — ESRS E1 climate)
+  and the generic engine `evaluateRuleStore` / `evaluateRequiredDatapoint` +
+  `rollUpDisclosureStatus` / `readinessPct`. Superseding a version inserts new rows and
+  never mutates prior ones.
+- Status is **objective, never "compliant"**: `not_started → data_available →
+  evidence_available → mapping_complete`, with `review_required` an override when data
+  exists but has a problem (`conflicting_data`, `expired_evidence`, `outdated_factor`,
+  `unit_mismatch`, `low_trust_score`). `mapping_complete` also needs a human `confirmed`
+  mapping and a Trust Score ≥ the required datapoint's threshold. `aggregation`
+  (`single` | `sum` | `latest`) reconciles multiple candidates for one metric key.
+- `@trace/db` orchestrators: `loadRuleStore` (idempotent upsert), `runComplianceEvaluation`
+  (idempotent upsert on `[org, required_datapoint, version]`; preserves `confirmed`),
+  `confirmMapping` (re-derives that mapping + its disclosure rollup), `upsertControl`. Every
+  mutation is hash-chain audit-logged (`compliance.evaluated`, `compliance.mapping_confirmed`,
+  `compliance.control_updated`).
+- RLS (`FORCE`, `current_org()`) on `compliance_control`, `compliance_mapping`,
+  `disclosure_status`, `compliance_run` — migration `0014_compliance_rls`. The rule-store
+  tables are global and deliberately not RLS'd.
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

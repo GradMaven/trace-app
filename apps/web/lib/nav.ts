@@ -45,10 +45,9 @@ export const NAV: NavSection[] = [
   {
     label: 'Compliance',
     items: [
-      { label: 'Requirements', href: '/compliance/requirements' },
-      { label: 'ESRS', href: '/compliance/esrs' },
-      { label: 'Disclosures', href: '/compliance/disclosures' },
-      { label: 'Gaps', href: '/compliance/gaps' },
+      { label: 'Requirements', href: '/compliance/requirements', ready: true },
+      { label: 'Disclosures', href: '/compliance/disclosures', ready: true },
+      { label: 'Gaps', href: '/compliance/gaps', ready: true },
     ],
   },
   {

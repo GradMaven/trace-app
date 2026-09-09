@@ -65,3 +65,19 @@ export type {
   QualityScanResult,
   QualitySummary,
 } from './trust';
+
+export {
+  loadRuleStore,
+  runComplianceEvaluation,
+  confirmMapping,
+  upsertControl,
+  complianceOverview,
+  disclosureDetail,
+  complianceGaps,
+  listRuleStoreVersions,
+} from './compliance';
+export type {
+  LoadRuleStoreResult,
+  RunComplianceArgs,
+  RunComplianceResult,
+} from './compliance';

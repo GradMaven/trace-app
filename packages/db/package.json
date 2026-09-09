@@ -31,6 +31,7 @@
   "dependencies": {
     "@prisma/client": "^6.1.0",
     "@trace/ai": "workspace:*",
+    "@trace/compliance": "workspace:*",
     "@trace/domain": "workspace:*",
     "@trace/shared": "workspace:*",
     "zod": "^3.24.1"

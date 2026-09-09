@@ -206,6 +206,18 @@ Disclosure status vocabulary (objective, never "compliant"):
 data_available | evidence_available | mapping_complete | review_required | not_started
 ```
 
+**Implementation status (Phase 7).** The rule store lives as frozen, versioned typed data
+in **`@trace/compliance`** (`esrs@2026.1` — ESRS E1 climate) and the generic engine
+`evaluateRuleStore` (pure) turns the tenant's datapoints + evidence + Trust Scores +
+factor validity into a status per required datapoint, rolled up to disclosures by
+`rollUpDisclosureStatus`. `not_started → data_available → evidence_available →
+mapping_complete`; `review_required` overrides when data exists but has a problem;
+`mapping_complete` needs a human-confirmed mapping and a Trust Score at/above threshold.
+`@trace/db` loads a version into the global rule tables and persists
+`compliance_mapping` / `disclosure_status` / `compliance_run` (tenant, RLS). See
+[data-model.md](data-model.md#compliance-phase-7) and
+[ADR-007](decisions/ADR-007-compliance-rule-store.md).
+
 ### Audit
 
 | Entity | Notes |

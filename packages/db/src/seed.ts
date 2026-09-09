@@ -24,12 +24,16 @@ import {
   getPrisma,
   promoteCandidate,
   provisionOrganization,
+  confirmMapping,
+  loadRuleStore,
   recomputeEmissions,
   recomputeSupplierPassport,
   runCalculation,
+  runComplianceEvaluation,
   runExtractionPipeline,
   runQualityScan,
   transitionEvidence,
+  upsertControl,
   withOrgContext,
   withPlatformContext,
   writeAuditLog,
@@ -171,7 +175,104 @@ async function main(): Promise<void> {
 
   await seedTrust();
   console.warn('[seed] Trust Scores computed and a data-quality scan run for FY2025.');
+
+  await seedCompliance();
+  console.warn('[seed] ESRS rule store loaded and evaluated against FY2025 data.');
   console.warn('[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).');
+}
+
+const RULE_STORE_VERSION = 'esrs@2026.1';
+
+async function seedCompliance(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const adminId = DEMO.users.admin.id;
+
+  await withOrgContext(orgId, async (db) => {
+    await loadRuleStore(db, RULE_STORE_VERSION);
+
+    const result = await runComplianceEvaluation(db, {
+      organizationId: orgId,
+      ruleStoreVersion: RULE_STORE_VERSION,
+      reportingPeriod: 'FY2025',
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
+
+    // A human confirms the Scope 3 purchased-goods mapping (it has verified
+    // supplier evidence and a trust score above threshold).
+    const cat1 = await db.requiredDatapoint.findFirst({
+      where: { key: 'esrs_e1_6_scope_3_pgs', ruleStoreVersion: RULE_STORE_VERSION },
+      select: { id: true },
+    });
+    if (cat1) {
+      const mapping = await db.complianceMapping.findFirst({
+        where: {
+          organizationId: orgId,
+          requiredDatapointId: cat1.id,
+          ruleStoreVersion: RULE_STORE_VERSION,
+          status: { in: ['evidence_available', 'mapping_complete'] },
+        },
+        select: { id: true },
+      });
+      if (mapping) {
+        await confirmMapping(db, {
+          organizationId: orgId,
+          mappingId: mapping.id,
+          confirm: true,
+          note: 'Reviewed against the Rheinstahl supplier report — figure and boundary accepted.',
+          actorUserId: adminId,
+          requestId: 'seed',
+        });
+      }
+    }
+
+    // Two organization controls for the GHG inventory requirement.
+    await upsertControl(db, {
+      organizationId: orgId,
+      key: 'esrs_e1_6_ctrl_inventory',
+      name: 'GHG inventory management',
+      description: 'Documented inventory boundary, consistent methodology, recalculation policy.',
+      requirementCode: 'E1-6',
+      ruleStoreVersion: RULE_STORE_VERSION,
+      owner: 'Sustainability team',
+      status: 'implemented',
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
+    await upsertControl(db, {
+      organizationId: orgId,
+      key: 'esrs_e1_6_ctrl_factors',
+      name: 'Emission-factor governance',
+      description: 'Factors from recognised sources, version-pinned, within validity.',
+      requirementCode: 'E1-6',
+      ruleStoreVersion: RULE_STORE_VERSION,
+      owner: 'ESG analyst',
+      status: 'needs_testing',
+      note: 'Demo library factors are illustrative — replace with a licensed dataset before reporting.',
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
+
+    await writeAuditLog(db, {
+      organizationId: orgId,
+      actorId: adminId,
+      action: 'seed.compliance_evaluated',
+      resourceType: 'compliance_run',
+      resourceId: result.runId,
+      before: null,
+      after: {
+        ruleStoreVersion: RULE_STORE_VERSION,
+        readinessPct: result.readinessPct,
+        statusCounts: result.statusCounts,
+      },
+      requestId: 'seed',
+    });
+
+    console.warn(
+      `[seed]   → ${result.disclosuresEvaluated} disclosures, ${result.mappingsWritten} mappings, ` +
+        `${result.readinessPct}% indicative readiness.`,
+    );
+  });
 }
 
 async function seedTrust(): Promise<void> {

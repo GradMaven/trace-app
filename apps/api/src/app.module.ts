@@ -26,6 +26,7 @@ import { EmissionsModule } from './modules/emissions/emissions.module';
 import { AiModule } from './modules/ai/ai.module';
 import { CandidateDatapointsModule } from './modules/candidate-datapoints/candidate-datapoints.module';
 import { TrustModule } from './modules/trust/trust.module';
+import { ComplianceModule } from './modules/compliance/compliance.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { TrustModule } from './modules/trust/trust.module';
     AiModule,
     CandidateDatapointsModule,
     TrustModule,
+    ComplianceModule,
   ],
   providers: [
     CatalogBootstrap,

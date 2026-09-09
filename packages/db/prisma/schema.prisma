@@ -120,6 +120,10 @@ model Organization {
   qualityIssues   DataQualityIssue[]
   anomalies       Anomaly[]
   qualityScans    QualityScan[]
+  complianceControls  ComplianceControl[]
+  complianceMappings  ComplianceMapping[]
+  disclosureStatuses  DisclosureStatusRecord[]
+  complianceRuns      ComplianceRun[]
 
   @@map("organization")
 }
@@ -1180,4 +1184,218 @@ model QualityScan {
 
   @@index([organizationId, startedAt])
   @@map("quality_scan")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7 — Compliance
+// ---------------------------------------------------------------------------
+
+enum ComplianceStatus {
+  not_started
+  data_available
+  evidence_available
+  mapping_complete
+  review_required
+
+  @@map("compliance_status")
+}
+
+enum ControlStatus {
+  not_implemented
+  implemented
+  needs_testing
+  passed
+  failed
+
+  @@map("control_status")
+}
+
+/// A regulation in the versioned rule store (Principle 7). Global rows
+/// (no organization); repository-scoped, never RLS'd. Superseding a
+/// `ruleStoreVersion` inserts new rows and leaves prior ones untouched.
+model Regulation {
+  key              String
+  name             String
+  jurisdiction     String
+  description      String   @default("")
+  ruleStoreVersion String   @map("rule_store_version")
+  notice           String   @default("")
+  loadedAt         DateTime @default(now()) @map("loaded_at") @db.Timestamptz(6)
+
+  id           String        @id @default(uuid()) @db.Uuid
+  requirements Requirement[]
+
+  @@unique([key, ruleStoreVersion])
+  @@map("regulation")
+}
+
+model Requirement {
+  id               String @id @default(uuid()) @db.Uuid
+  regulationId     String @map("regulation_id") @db.Uuid
+  code             String
+  title            String
+  description      String @default("")
+  ruleStoreVersion String @map("rule_store_version")
+
+  regulation  Regulation          @relation(fields: [regulationId], references: [id], onDelete: Cascade)
+  disclosures Disclosure[]
+  controls    ComplianceControl[]
+
+  @@unique([regulationId, code])
+  @@map("requirement")
+}
+
+model Disclosure {
+  id               String @id @default(uuid()) @db.Uuid
+  requirementId    String @map("requirement_id") @db.Uuid
+  code             String
+  title            String
+  guidance         String @default("")
+  ruleStoreVersion String @map("rule_store_version")
+
+  requirement          Requirement             @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  requiredDatapoints   RequiredDatapoint[]
+  evidenceRequirements EvidenceRequirement[]
+  mappings             ComplianceMapping[]
+  statuses             DisclosureStatusRecord[]
+
+  @@unique([requirementId, code, ruleStoreVersion])
+  @@map("disclosure")
+}
+
+model RequiredDatapoint {
+  id               String  @id @default(uuid()) @db.Uuid
+  disclosureId     String  @map("disclosure_id") @db.Uuid
+  key              String
+  metricKey        String  @map("metric_key")
+  unit             String?
+  cardinality      String  @default("single")
+  subjectScope     String  @default("organization") @map("subject_scope")
+  aggregation      String  @default("single")
+  minTrustScore    Int?    @map("min_trust_score")
+  label            String  @default("")
+  conditions       Json    @default("{}")
+  ruleStoreVersion String  @map("rule_store_version")
+
+  disclosure Disclosure          @relation(fields: [disclosureId], references: [id], onDelete: Cascade)
+  mappings   ComplianceMapping[]
+
+  @@unique([key, ruleStoreVersion])
+  @@index([metricKey])
+  @@map("required_datapoint")
+}
+
+model EvidenceRequirement {
+  id               String   @id @default(uuid()) @db.Uuid
+  disclosureId     String   @map("disclosure_id") @db.Uuid
+  key              String
+  description      String
+  acceptableTypes  String[] @map("acceptable_types")
+  ruleStoreVersion String   @map("rule_store_version")
+
+  disclosure Disclosure @relation(fields: [disclosureId], references: [id], onDelete: Cascade)
+
+  @@unique([disclosureId, key, ruleStoreVersion])
+  @@map("evidence_requirement")
+}
+
+/// An organization-level control expected for a requirement. Tenant-owned (RLS).
+model ComplianceControl {
+  id               String        @id @default(uuid()) @db.Uuid
+  organizationId   String        @map("organization_id") @db.Uuid
+  requirementId    String?       @map("requirement_id") @db.Uuid
+  ruleStoreVersion String        @map("rule_store_version")
+  key              String
+  name             String
+  description      String        @default("")
+  owner            String?
+  status           ControlStatus @default(not_implemented)
+  lastTestedAt     DateTime?     @map("last_tested_at") @db.Timestamptz(6)
+  note             String?
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requirement  Requirement? @relation(fields: [requirementId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, key])
+  @@index([organizationId, status])
+  @@map("compliance_control")
+}
+
+/// The engine's suggested (and optionally human-confirmed) link between a
+/// required datapoint and the tenant's company data. Objective `status`;
+/// `gapReasons` explains why it is not `mapping_complete`. Tenant-owned (RLS).
+model ComplianceMapping {
+  id                 String           @id @default(uuid()) @db.Uuid
+  organizationId     String           @map("organization_id") @db.Uuid
+  requiredDatapointId String          @map("required_datapoint_id") @db.Uuid
+  disclosureId       String           @map("disclosure_id") @db.Uuid
+  ruleStoreVersion   String           @map("rule_store_version")
+  reportingPeriod    String?          @map("reporting_period")
+  status             ComplianceStatus @default(not_started)
+  gapReasons         String[]         @map("gap_reasons")
+  datapointIds       String[]         @map("datapoint_ids") @db.Uuid
+  calculationIds     String[]         @map("calculation_ids") @db.Uuid
+  evidenceIds        String[]         @map("evidence_ids") @db.Uuid
+  resolvedValue      Decimal?         @map("resolved_value") @db.Decimal(30, 6)
+  resolvedValueText  String?          @map("resolved_value_text")
+  trustScore         Int?             @map("trust_score")
+  confirmed          Boolean          @default(false)
+  confirmedByUserId  String?          @map("confirmed_by_user_id") @db.Uuid
+  confirmedAt        DateTime?        @map("confirmed_at") @db.Timestamptz(6)
+  note               String?
+  computedAt         DateTime         @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  requiredDatapoint RequiredDatapoint @relation(fields: [requiredDatapointId], references: [id], onDelete: Cascade)
+  disclosure        Disclosure        @relation(fields: [disclosureId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, requiredDatapointId, ruleStoreVersion])
+  @@index([organizationId, status])
+  @@index([organizationId, disclosureId])
+  @@map("compliance_mapping")
+}
+
+/// Rolled-up objective status of a disclosure for one tenant + rule-store
+/// version. Tenant-owned (RLS).
+model DisclosureStatusRecord {
+  id               String           @id @default(uuid()) @db.Uuid
+  organizationId   String           @map("organization_id") @db.Uuid
+  disclosureId     String           @map("disclosure_id") @db.Uuid
+  ruleStoreVersion String           @map("rule_store_version")
+  reportingPeriod  String?          @map("reporting_period")
+  status           ComplianceStatus @default(not_started)
+  requiredTotal    Int              @default(0) @map("required_total")
+  satisfied        Int              @default(0)
+  readinessPct     Decimal          @default(0) @map("readiness_pct") @db.Decimal(5, 1)
+  computedAt       DateTime         @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  disclosure  Disclosure   @relation(fields: [disclosureId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, disclosureId, ruleStoreVersion])
+  @@index([organizationId, status])
+  @@map("disclosure_status")
+}
+
+/// One run of the compliance mapping engine. Tenant-owned (RLS).
+model ComplianceRun {
+  id                   String    @id @default(uuid()) @db.Uuid
+  organizationId       String    @map("organization_id") @db.Uuid
+  ruleStoreVersion     String    @map("rule_store_version")
+  reportingPeriod      String?   @map("reporting_period")
+  disclosuresEvaluated Int       @default(0) @map("disclosures_evaluated")
+  requiredDatapoints   Int       @default(0) @map("required_datapoints")
+  mappingsWritten      Int       @default(0) @map("mappings_written")
+  readinessPct         Decimal   @default(0) @map("readiness_pct") @db.Decimal(5, 1)
+  ranByUserId          String?   @map("ran_by_user_id") @db.Uuid
+  startedAt            DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt          DateTime? @map("completed_at") @db.Timestamptz(6)
+  durationMs           Int       @default(0) @map("duration_ms")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, startedAt])
+  @@map("compliance_run")
 }

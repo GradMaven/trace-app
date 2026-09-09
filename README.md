@@ -29,6 +29,24 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 7 — Compliance (landed).** On top of Phases 1–6: the new **`@trace/compliance`**
+package — a **versioned regulatory rule store** (frozen typed data; `esrs@2026.1` covers
+ESRS E1 climate: transition plan, targets, energy & mix, gross Scope 1/2/3) and a generic,
+pure **mapping engine** that turns the tenant's datapoints, calculations and evidence into
+an **objective** status per required disclosure (`not_started → data_available →
+evidence_available → mapping_complete`, with `review_required` when data exists but has a
+problem). It **never** says "compliant". `@trace/db` adds the global rule tables plus
+tenant `compliance_mapping` / `disclosure_status` / `compliance_control` / `compliance_run`
+(RLS on the tenant tables); `runComplianceEvaluation` is an idempotent re-run that
+preserves human `confirmed` decisions, and every mutation is hash-chain audit-logged. Web
+adds Compliance → Requirements, Disclosures and a disclosure **"why"** page that traces
+requirement → datapoint → calculation → evidence, plus a Gaps list — every screen carries a
+"supports professional judgement, not legal advice" disclaimer. Builds, typechecks, lints,
+and unit tests are green; the Postgres-dependent integration suites (RLS / tenant
+isolation, supplier, evidence, carbon, AI extraction, trust, compliance) run in CI. See
+[docs/roadmap.md](docs/roadmap.md) for exact status and what's next (Phase 8 — Audit
+workspace).
+
 **Phase 6 — Trust Engine (landed).** On top of Phases 1–5: `@trace/domain/trust` — a
 documented, additive **TRACE Trust Score** per datapoint (`trust-model@1.0.0`, 0–100 with a
 stored per-dimension breakdown so every score explains itself), a **data-quality check
@@ -41,10 +59,7 @@ idempotent `data_quality_issue` / `anomaly` model (dedupe key, auto-resolve, sti
 dismiss) and a `quality_scan` run record; `runQualityScan` scores every in-scope datapoint,
 refreshes issues, detects anomalies and writes one audit entry. Web adds **Data → Data
 Quality** (dashboard, scan history, run scan), issue and anomaly triage queues, and the
-Trust Score breakdown on the datapoint page. Builds, typechecks, lints, and unit tests are
-green; the Postgres-dependent integration suites (RLS / tenant isolation, supplier, evidence,
-carbon, AI extraction, trust) run in CI. See [docs/roadmap.md](docs/roadmap.md) for exact
-status and what's next (Phase 7 — Compliance).
+Trust Score breakdown on the datapoint page.
 
 Reference documents:
 
