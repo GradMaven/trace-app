@@ -11,3 +11,5 @@ export * from './trust/model';
 export * from './trust/quality';
 export * from './trust/anomaly';
 export * from './audit/readiness';
+export * from './procurement/comparison';
+export * from './procurement/scenario';

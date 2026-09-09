@@ -28,6 +28,7 @@ export const PERMISSIONS = {
   'supplier.archive': 'Archive and restore suppliers',
   'supplier.invite': 'Invite supplier-portal users',
   'supplier.request': 'Send and manage information requests to suppliers',
+  'procurement.scenario': 'Create and run procurement carbon what-if scenarios',
 
   // Supplier portal (external supplier users)
   'portal.access': 'Access the supplier portal for the linked supplier',

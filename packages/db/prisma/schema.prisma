@@ -129,6 +129,7 @@ model Organization {
   auditSimulationRuns AuditSimulationRun[]
   auditPackages       AuditPackage[]
   askQueries          AskQuery[]
+  procurementScenarios ProcurementScenario[]
 
   @@map("organization")
 }
@@ -1614,4 +1615,33 @@ model AskQuery {
 
   @@index([organizationId, createdAt])
   @@map("ask_query")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 11 — Procurement intelligence
+// ---------------------------------------------------------------------------
+
+/// A saved procurement carbon what-if. `inputs` holds the supplier lines +
+/// proposed changes; `result` holds the deterministic `projectScenario` output.
+/// Immutable once created — re-modelling produces a new row.
+model ProcurementScenario {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  name            String
+  description     String?
+  reportingPeriod String?  @map("reporting_period")
+  engineVersion   String   @map("engine_version")
+  baselineTco2e   Decimal  @map("baseline_tco2e") @db.Decimal(20, 4)
+  projectedTco2e  Decimal  @map("projected_tco2e") @db.Decimal(20, 4)
+  deltaTco2e      Decimal  @map("delta_tco2e") @db.Decimal(20, 4)
+  deltaPct        Decimal  @map("delta_pct") @db.Decimal(8, 2)
+  inputs          Json     @default("{}")
+  result          Json     @default("{}")
+  createdByUserId String   @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@map("procurement_scenario")
 }

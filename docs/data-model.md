@@ -510,6 +510,31 @@ ask_query(id, organization_id, question, intent, reporting_period NULL, answered
   is `unsupported`.
 - RLS (`FORCE`, `current_org()`) on `ask_query` — migration `0018_ask_rls`.
 
+### Procurement intelligence (Phase 11)
+
+```
+procurement_scenario(id, organization_id, name, description NULL, reporting_period NULL,
+                     engine_version, baseline_tco2e numeric(20,4), projected_tco2e numeric(20,4),
+                     delta_tco2e numeric(20,4), delta_pct numeric(8,2), inputs jsonb, result jsonb,
+                     created_by_user_id, created_at)
+```
+
+- **`@trace/domain/procurement`** (pure, `procurement@1`): `compareSuppliers` returns per
+  supplier a carbon **intensity** (tCO2e / €1,000 spend), emission & spend shares, an
+  intensity ranking, an `attributionQuality` (`supplier_specific` | `spend_based` | `other`
+  | `none`), flags, and deterministic reduction opportunities. `projectScenario` re-runs
+  `computeEmission` on `ScenarioLineInput[]` with `ScenarioChange[]`
+  (`activityMultiplier` / `factorValue` / `methodology` / `drop`) → baseline → projected →
+  delta (exact, decimal.js). No AI.
+- **`@trace/db/procurement.ts`** — no persisted comparison (it is derived on read):
+  `supplierCarbonComparison` gathers `supplier` + `supplier_relationship.annual_spend` +
+  attributed `datapoint`s (`subject_type = supplier`, `metric_key LIKE 'emission_%'`) +
+  their `calculation.methodology` + `trust_score` + `supplier_passport`, then calls
+  `compareSuppliers`. `scenarioLinesForSuppliers` builds lines from each supplier's largest
+  attributed `calculation`. `runProcurementScenario` persists an **immutable**
+  `procurement_scenario` (audit `procurement.scenario_run`).
+- RLS (`FORCE`, `current_org()`) on `procurement_scenario` — migration `0020_procurement_rls`.
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

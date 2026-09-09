@@ -29,6 +29,8 @@ import {
   confirmMapping,
   loadRuleStore,
   runAskQuery,
+  runProcurementScenario,
+  scenarioLinesForSuppliers,
   recomputeEmissions,
   recomputeSupplierPassport,
   runAuditSimulation,
@@ -179,6 +181,9 @@ async function main(): Promise<void> {
     '[seed] Emission factors, activity data, calculations, and FY2025 emissions created.',
   );
 
+  await seedProcurement();
+  console.warn('[seed] Spend-based Scope 3 attributed to tier-1 suppliers; a demo scenario saved.');
+
   await seedAiExtraction();
   console.warn('[seed] Demo document processed through the extraction pipeline (stub provider).');
 
@@ -196,6 +201,92 @@ async function main(): Promise<void> {
   console.warn(
     '[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).',
   );
+}
+
+async function seedProcurement(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const analystId = DEMO.users.analyst.id;
+  const adminId = DEMO.users.admin.id;
+
+  await withOrgContext(orgId, async (db) => {
+    // Spend-based Scope 3 screening: attribute cat-1 emissions to each tier-1
+    // supplier that has spend but no supplier-specific data yet (Rheinstahl
+    // already has a supplier-specific steel calculation).
+    const suppliers = await db.supplier.findMany({
+      where: { organizationId: orgId, status: 'active' },
+      include: { relationship: { select: { annualSpend: true, tier: true } } },
+    });
+    let attributed = 0;
+    for (const s of suppliers) {
+      if (s.name === SUPPLIER_ROWS[0]!.name) continue; // Rheinstahl — supplier-specific
+      const spend = s.relationship?.annualSpend ? Number(s.relationship.annualSpend) : 0;
+      if ((s.relationship?.tier ?? 9) > 1 || spend <= 0) continue;
+
+      const activity = await db.activityData.create({
+        data: {
+          organizationId: orgId,
+          scope: 'scope_3' as never,
+          ghgCategory: 'cat_1_purchased_goods_services' as never,
+          category: `Purchased goods & services — ${s.name}`,
+          description: 'Spend-based EEIO screening (illustrative)',
+          value: spend,
+          unit: 'EUR',
+          reportingPeriod: 'FY2025',
+          provenance: 'estimated',
+          subjectType: 'supplier',
+          subjectId: s.id,
+          supplierId: s.id,
+          occurredOn: new Date('2025-12-31'),
+          createdByUserId: analystId,
+        },
+      });
+      await runCalculation(db, {
+        organizationId: orgId,
+        activityId: activity.id,
+        actorUserId: analystId,
+        requestId: 'seed',
+      });
+      attributed += 1;
+    }
+
+    await recomputeEmissions(db, {
+      organizationId: orgId,
+      reportingPeriod: 'FY2025',
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
+
+    // A saved demo scenario: refine the aluminium factor and trim inbound steel volume.
+    const rheinstahl = suppliers.find((s) => s.name === SUPPLIER_ROWS[0]!.name);
+    const aluminium = suppliers.find((s) => s.name === SUPPLIER_ROWS[1]!.name);
+    const targets = [rheinstahl?.id, aluminium?.id].filter((x): x is string => !!x);
+    if (targets.length > 0) {
+      const lines = await scenarioLinesForSuppliers(db, orgId, targets, 'FY2025');
+      if (lines.length > 0) {
+        const changes = lines.map((l) =>
+          l.supplierId === rheinstahl?.id
+            ? { supplierId: l.supplierId, activityMultiplier: 0.9 }
+            : {
+                supplierId: l.supplierId,
+                factorValue: Math.max(0.01, Number(l.factorValue) * 0.7),
+              },
+        );
+        await runProcurementScenario(db, {
+          organizationId: orgId,
+          name: 'FY2026 plan — trim steel 10%, refine aluminium factor',
+          description:
+            'Illustrative: 10% lower crude-steel volume from Rheinstahl and a 30% cleaner aluminium factor.',
+          reportingPeriod: 'FY2025',
+          lines,
+          changes,
+          actorUserId: adminId,
+          requestId: 'seed',
+        });
+      }
+    }
+
+    console.warn(`[seed]   → ${attributed} suppliers given a spend-based Scope 3 figure.`);
+  });
 }
 
 async function seedAsk(): Promise<void> {

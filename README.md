@@ -29,6 +29,21 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 11 — Procurement intelligence (landed).** On top of Phases 1–10:
+`@trace/domain/procurement` — `compareSuppliers` (pure) ranks the supply base by **carbon
+intensity** (tCO2e per €1,000 of annual spend), shows an `attributionQuality` per supplier
+(spend-based EEIO screen, refined where supplier-specific calculations exist), and proposes
+**deterministic**, quantified reduction opportunities; `projectScenario` (pure) re-runs the
+Phase-4 carbon engine on a set of supplier lines with per-line changes (cut volume, switch
+to a cleaner factor, drop a supplier) and reports baseline → projected → delta. `@trace/db`
+gathers the tenant's suppliers + spend + attributed emissions + Trust + passports, and
+persists **immutable** `procurement_scenario` snapshots (audit-logged). Web adds Supply
+Chain → **Carbon Map** and a **Procurement Scenarios** builder. Builds, typechecks, lints
+and unit tests are green; the Postgres-dependent integration suites (RLS / tenant isolation,
+supplier, evidence, carbon, AI extraction, trust, compliance, audit, command center, ask,
+procurement) run in CI. See [docs/roadmap.md](docs/roadmap.md) for exact status and what's
+next (Phase 12 — Enterprise integrations).
+
 **Phase 10 — Ask TRACE (landed).** On top of Phases 1–9: natural-language questions
 answered by **retrieval over the tenant's own records** — the model never writes a query and
 never answers a factual question about the workspace from outside knowledge. `@trace/ai`

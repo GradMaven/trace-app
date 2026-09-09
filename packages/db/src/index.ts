@@ -106,3 +106,12 @@ export type { CommandCenterOverview } from './command-center';
 
 export { runAskQuery, askHistory, askQueryById } from './ask';
 export type { AskDeps, RunAskQueryArgs, RunAskQueryResult, RetrievedRecord } from './ask';
+
+export {
+  supplierCarbonComparison,
+  scenarioLinesForSuppliers,
+  runProcurementScenario,
+  listProcurementScenarios,
+  procurementScenarioById,
+} from './procurement';
+export type { RunProcurementScenarioArgs, RunProcurementScenarioResult } from './procurement';

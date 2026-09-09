@@ -30,6 +30,7 @@ import { ComplianceModule } from './modules/compliance/compliance.module';
 import { AuditWorkspaceModule } from './modules/audit/audit.module';
 import { CommandCenterModule } from './modules/command-center/command-center.module';
 import { AskModule } from './modules/ask/ask.module';
+import { ProcurementModule } from './modules/procurement/procurement.module';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { AskModule } from './modules/ask/ask.module';
     AuditWorkspaceModule,
     CommandCenterModule,
     AskModule,
+    ProcurementModule,
   ],
   providers: [
     CatalogBootstrap,
