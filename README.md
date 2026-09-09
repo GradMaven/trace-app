@@ -29,6 +29,25 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 12 — Enterprise integrations (landed).** On top of Phases 1–11: bulk activity data
+in, with per-row validation before anything is written. **New `@trace/domain/integrations`**
+(pure) — a dependency-free CSV/TSV parser (`parseDelimited`), an `IntegrationAdapter`
+contract, and `CsvActivityAdapter` (`csv_activity`) that maps a spreadsheet's columns onto
+the TRACE activity-data shape and validates every row (missing required, non-numeric/negative
+quantity, bad enum, bad date, unknown unit, non-UUID subject/supplier id). `@trace/db`
+adds `previewImport` (pure — every row with its raw values, typed result or `null`, and
+errors, plus a valid/invalid summary) and `commitImport` (writes **only** the valid rows as
+`activity_data`, each stamped `source_ref = import:<run>:<line>` and defaulting to
+`estimated` provenance, one audit entry per run), plus saved connectors and run history in
+new `integration` / `integration_run` tables (RLS-forced). API exposes
+`/integrations/*` behind a new `integration.manage` permission with a 5 MB text-only upload
+guard; web adds Settings → Integrations and an import wizard (upload → auto-map → preview →
+import — nothing is written until you confirm). Builds, typechecks, lints and unit tests are
+green; the Postgres-dependent integration suites (RLS / tenant isolation, supplier, evidence,
+carbon, AI extraction, trust, compliance, audit, command center, ask, procurement,
+integrations) run in CI. See [docs/roadmap.md](docs/roadmap.md) for exact status and what's
+next (Phase 13 — Enterprise readiness).
+
 **Phase 11 — Procurement intelligence (landed).** On top of Phases 1–10:
 `@trace/domain/procurement` — `compareSuppliers` (pure) ranks the supply base by **carbon
 intensity** (tCO2e per €1,000 of annual spend), shows an `attributionQuality` per supplier

@@ -535,6 +535,45 @@ procurement_scenario(id, organization_id, name, description NULL, reporting_peri
   `procurement_scenario` (audit `procurement.scenario_run`).
 - RLS (`FORCE`, `current_org()`) on `procurement_scenario` — migration `0020_procurement_rls`.
 
+### Enterprise integrations (Phase 12)
+
+```
+integration(id, organization_id, kind, name, config jsonb, status, last_run_at NULL,
+            created_by_user_id, created_at, updated_at)
+
+integration_run(id, organization_id, integration_id NULL, kind, status, file_name NULL,
+                file_checksum NULL, mapping jsonb, defaults jsonb,
+                rows_total int, rows_valid int, rows_invalid int, rows_imported int,
+                preview jsonb, errors jsonb, created_activity_ids uuid[],
+                ran_by_user_id NULL, started_at, completed_at NULL, duration_ms int, error NULL)
+```
+
+- **`@trace/domain/integrations`** (pure): `parseDelimited(text, delimiter?)` — a
+  dependency-free RFC-4180-ish CSV/TSV reader (quoted fields, `""` escape, embedded
+  delimiters/newlines, CRLF/LF, BOM strip, blank records dropped, first non-empty record is
+  the header) — plus `detectDelimiter`. `IntegrationAdapter` = `{ kind, label, targetFields(),
+  sampleHeaders(), preview(input) }`, all pure. `CsvActivityAdapter` (`kind = csv_activity`)
+  resolves each target field (constant > mapped column > default) and validates every row:
+  required-missing, non-numeric / negative quantity, value not in an enum
+  (`GHG_SCOPE` / subject type / `GHG_CATEGORY` / `PROVENANCE`), bad `YYYY-MM-DD` date,
+  unit not in the TRACE unit registry (`isKnownUnit`), non-UUID `subject_id` / `supplier_id`.
+  `preview` returns `{ kind, headers, rows: [{ line, raw, mapped|null, errors[] }],
+  summary: { total, valid, invalid } }`. A `registry` maps `IntegrationKind → adapter`
+  (`getIntegrationAdapter` throws on an unknown kind).
+- **`@trace/db/integrations.ts`** — `previewImport(kind, text, mapping, defaults)` wraps the
+  adapter (no transaction; wraps an unknown kind as `AppError.unprocessable`).
+  `commitImport(db, args)` re-previews, creates the `integration_run` (`running`), then per
+  **valid** mapped row `db.activityData.create` with
+  `source_ref = import:<run>:<line>` and `provenance = mapped ?? 'estimated'`; per-row
+  failures are caught into `errors[]`. Status is `failed` only when zero rows were written
+  despite `valid > 0`, else `completed`; the run is updated with counts / `created_activity_ids`
+  / timings, the connector's `last_run_at` is bumped, and one `integration.import_completed`
+  audit entry is written. `createIntegration` / `updateIntegration` (audit-logged),
+  `listIntegrations` (with run counts), `listIntegrationRuns`, `integrationRunById`.
+- RLS (`FORCE`, `current_org()`) on `integration` and `integration_run` — migration
+  `0022_integrations_rls`. `integration_run` is append-only in practice (created `running`,
+  updated once to a terminal status); it is not version-chained.
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

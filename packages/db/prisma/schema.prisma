@@ -130,6 +130,8 @@ model Organization {
   auditPackages       AuditPackage[]
   askQueries          AskQuery[]
   procurementScenarios ProcurementScenario[]
+  integrations        Integration[]
+  integrationRuns     IntegrationRun[]
 
   @@map("organization")
 }
@@ -1644,4 +1646,80 @@ model ProcurementScenario {
 
   @@index([organizationId, createdAt])
   @@map("procurement_scenario")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 12 — Enterprise integrations
+// ---------------------------------------------------------------------------
+
+enum IntegrationStatus {
+  active
+  paused
+  error
+
+  @@map("integration_status")
+}
+
+enum IntegrationRunStatus {
+  running
+  completed
+  failed
+
+  @@map("integration_run_status")
+}
+
+/// A saved connector configuration. `config` holds the reusable column mapping +
+/// import defaults for its `kind` (only `csv_activity` in Phase 12; the
+/// `IntegrationAdapter` contract in @trace/domain is what a REST/SFTP/ERP
+/// connector would implement next).
+model Integration {
+  id              String            @id @default(uuid()) @db.Uuid
+  organizationId  String            @map("organization_id") @db.Uuid
+  kind            String
+  name            String
+  config          Json              @default("{}")
+  status          IntegrationStatus @default(active)
+  lastRunAt       DateTime?         @map("last_run_at") @db.Timestamptz(6)
+  createdByUserId String            @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  runs         IntegrationRun[]
+
+  @@index([organizationId, kind])
+  @@map("integration")
+}
+
+/// One import execution. Records the mapping + defaults used, per-row validation
+/// counts, a capped preview sample, any per-row errors, and the `activity_data`
+/// rows it created (each stamped `source_ref = import:<run>:<line>`).
+model IntegrationRun {
+  id                 String               @id @default(uuid()) @db.Uuid
+  organizationId     String               @map("organization_id") @db.Uuid
+  integrationId      String?              @map("integration_id") @db.Uuid
+  kind               String
+  status             IntegrationRunStatus @default(running)
+  fileName           String?              @map("file_name")
+  fileChecksum       String?              @map("file_checksum")
+  mapping            Json                 @default("{}")
+  defaults           Json                 @default("{}")
+  rowsTotal          Int                  @default(0) @map("rows_total")
+  rowsValid          Int                  @default(0) @map("rows_valid")
+  rowsInvalid        Int                  @default(0) @map("rows_invalid")
+  rowsImported       Int                  @default(0) @map("rows_imported")
+  preview            Json                 @default("[]")
+  errors             Json                 @default("[]")
+  createdActivityIds String[]             @map("created_activity_ids") @db.Uuid
+  ranByUserId        String?              @map("ran_by_user_id") @db.Uuid
+  startedAt          DateTime             @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt        DateTime?            @map("completed_at") @db.Timestamptz(6)
+  durationMs         Int                  @default(0) @map("duration_ms")
+  error              String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  integration  Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, startedAt])
+  @@map("integration_run")
 }

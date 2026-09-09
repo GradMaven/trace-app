@@ -8,12 +8,7 @@ export {
 } from './client';
 export type { TenantDb, Prisma, PrismaClient } from './client';
 
-export {
-  runWithContext,
-  getContext,
-  requireContext,
-  requireOrganizationId,
-} from './context';
+export { runWithContext, getContext, requireContext, requireOrganizationId } from './context';
 export type { RequestContext } from './context';
 
 export { writeAuditLog, verifyAuditChain } from './audit';
@@ -76,11 +71,7 @@ export {
   complianceGaps,
   listRuleStoreVersions,
 } from './compliance';
-export type {
-  LoadRuleStoreResult,
-  RunComplianceArgs,
-  RunComplianceResult,
-} from './compliance';
+export type { LoadRuleStoreResult, RunComplianceArgs, RunComplianceResult } from './compliance';
 
 export {
   runAuditSimulation,
@@ -115,3 +106,14 @@ export {
   procurementScenarioById,
 } from './procurement';
 export type { RunProcurementScenarioArgs, RunProcurementScenarioResult } from './procurement';
+
+export {
+  previewImport,
+  commitImport,
+  createIntegration,
+  updateIntegration,
+  listIntegrations,
+  listIntegrationRuns,
+  integrationRunById,
+} from './integrations';
+export type { CommitImportArgs, CommitImportResult } from './integrations';

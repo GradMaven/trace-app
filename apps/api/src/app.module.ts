@@ -31,6 +31,7 @@ import { AuditWorkspaceModule } from './modules/audit/audit.module';
 import { CommandCenterModule } from './modules/command-center/command-center.module';
 import { AskModule } from './modules/ask/ask.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
+import { IntegrationsModule } from './modules/integrations/integrations.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { ProcurementModule } from './modules/procurement/procurement.module';
     CommandCenterModule,
     AskModule,
     ProcurementModule,
+    IntegrationsModule,
   ],
   providers: [
     CatalogBootstrap,

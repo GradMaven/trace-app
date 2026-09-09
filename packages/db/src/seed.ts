@@ -27,6 +27,8 @@ import {
   promoteCandidate,
   provisionOrganization,
   confirmMapping,
+  commitImport,
+  createIntegration,
   loadRuleStore,
   runAskQuery,
   runProcurementScenario,
@@ -184,6 +186,9 @@ async function main(): Promise<void> {
   await seedProcurement();
   console.warn('[seed] Spend-based Scope 3 attributed to tier-1 suppliers; a demo scenario saved.');
 
+  await seedIntegrations();
+  console.warn('[seed] CSV connector saved and a facility-energy import committed.');
+
   await seedAiExtraction();
   console.warn('[seed] Demo document processed through the extraction pipeline (stub provider).');
 
@@ -286,6 +291,58 @@ async function seedProcurement(): Promise<void> {
     }
 
     console.warn(`[seed]   → ${attributed} suppliers given a spend-based Scope 3 figure.`);
+  });
+}
+
+async function seedIntegrations(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const analystId = DEMO.users.analyst.id;
+
+  const mapping = {
+    scope: { column: 'scope' },
+    category: { column: 'category' },
+    value: { column: 'value' },
+    unit: { column: 'unit' },
+    reportingPeriod: { column: 'period' },
+    subjectType: { column: 'subject_type' },
+    subjectId: { column: 'subject_id' },
+    provenance: { column: 'provenance' },
+  };
+  const defaults = { reportingPeriod: 'FY2025', subjectType: 'organization', subjectId: orgId };
+
+  const csv =
+    `scope,category,value,unit,period,subject_type,subject_id,provenance\n` +
+    `scope_2_location,Purchased electricity — Plant Hamburg,3200000,kWh,FY2025,organization,${orgId},measured\n` +
+    `scope_2_location,Purchased electricity — Plant Leipzig,2100000,kWh,FY2025,organization,${orgId},measured\n` +
+    `scope_1,Stationary combustion — Plant Hamburg boilers,880000,kWh,FY2025,organization,${orgId},measured\n`;
+  const checksum = createHash('sha256').update(csv, 'utf8').digest('hex');
+
+  await withOrgContext(orgId, async (db) => {
+    const integration = await createIntegration(db, {
+      organizationId: orgId,
+      kind: 'csv_activity',
+      name: 'Monthly facility energy — CSV',
+      config: { mapping, defaults },
+      actorUserId: analystId,
+      requestId: 'seed',
+    });
+
+    const result = await commitImport(db, {
+      organizationId: orgId,
+      kind: 'csv_activity',
+      integrationId: integration.id,
+      fileName: 'facility-energy-fy2025.csv',
+      fileChecksum: checksum,
+      text: csv,
+      mapping,
+      defaults,
+      actorUserId: analystId,
+      requestId: 'seed',
+    });
+
+    console.warn(
+      `[seed]   → imported ${result.rowsImported}/${result.rowsTotal} activity rows via the CSV adapter.`,
+    );
   });
 }
 

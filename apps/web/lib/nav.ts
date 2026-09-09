@@ -69,6 +69,7 @@ export const NAV: NavSection[] = [
     items: [
       { label: 'Members', href: '/settings/members', ready: true },
       { label: 'Roles', href: '/settings/roles', ready: true },
+      { label: 'Integrations', href: '/settings/integrations', ready: true },
       { label: 'Organization', href: '/settings/organization' },
     ],
   },
