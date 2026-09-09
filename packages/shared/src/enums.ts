@@ -226,5 +226,69 @@ export type ControlStatus = (typeof CONTROL_STATUS)[number];
 export const REQUIRED_DATAPOINT_CARDINALITY = ['single', 'multiple'] as const;
 export type RequiredDatapointCardinality = (typeof REQUIRED_DATAPOINT_CARDINALITY)[number];
 
+// ---------------------------------------------------------------------------
+// Phase 8 — Audit workspace
+// ---------------------------------------------------------------------------
+
+/** Lifecycle of an audit engagement. */
+export const AUDIT_STATUS = ['planning', 'fieldwork', 'review', 'complete'] as const;
+export type AuditStatus = (typeof AUDIT_STATUS)[number];
+
+export const FINDING_SEVERITY = ['critical', 'warning', 'info'] as const;
+export type FindingSeverity = (typeof FINDING_SEVERITY)[number];
+
+/** Where a finding came from: a person raised it, or the readiness simulation did. */
+export const FINDING_SOURCE = ['manual', 'simulation'] as const;
+export type FindingSource = (typeof FINDING_SOURCE)[number];
+
+/**
+ * Finding lifecycle. `accepted_risk` = a person judged it acceptable and
+ * documented why; `dismissed` = not a real problem. Both are sticky against a
+ * re-scan (like a dismissed data-quality issue).
+ */
+export const FINDING_STATUS = [
+  'open',
+  'acknowledged',
+  'remediating',
+  'resolved',
+  'accepted_risk',
+  'dismissed',
+] as const;
+export type FindingStatus = (typeof FINDING_STATUS)[number];
+
+export const AUDIT_PACKAGE_STATUS = ['generating', 'ready', 'failed'] as const;
+export type AuditPackageStatus = (typeof AUDIT_PACKAGE_STATUS)[number];
+
+/**
+ * Audit-readiness dimensions and their maximum contributions
+ * (docs/domain-model.md, ADR-008). Documented, additive, versioned with the
+ * readiness model; a simulation stores its per-dimension breakdown.
+ */
+export const AUDIT_READINESS_DIMENSION = [
+  'evidence_verified',
+  'calculations_reproducible',
+  'calculations_approved',
+  'data_quality',
+  'trust_level',
+  'compliance_mapping',
+  'audit_trail_integrity',
+] as const;
+export type AuditReadinessDimension = (typeof AUDIT_READINESS_DIMENSION)[number];
+
+/** Kinds of issue the readiness simulation raises as findings. */
+export const AUDIT_ISSUE_KIND = [
+  'unverified_evidence',
+  'expired_evidence',
+  'unreproducible_calculation',
+  'unapproved_calculation',
+  'open_critical_quality_issue',
+  'low_trust_datapoint',
+  'compliance_gap',
+  'compliance_review_required',
+  'broken_audit_chain',
+  'datapoint_without_lineage',
+] as const;
+export type AuditIssueKind = (typeof AUDIT_ISSUE_KIND)[number];
+
 export const MEMBERSHIP_STATUS = ['invited', 'active', 'suspended'] as const;
 export type MembershipStatus = (typeof MEMBERSHIP_STATUS)[number];

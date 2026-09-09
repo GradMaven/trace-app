@@ -18,9 +18,11 @@ import { QUESTIONNAIRE_VERSION } from '@trace/domain';
 import { createStorageService, documentStorageKey } from '@trace/storage';
 import type { Prisma } from './index';
 import {
+  createAudit,
   disconnectPrisma,
   ensurePermissionCatalog,
   ensurePlatformRole,
+  generateAuditPackage,
   getPrisma,
   promoteCandidate,
   provisionOrganization,
@@ -28,11 +30,13 @@ import {
   loadRuleStore,
   recomputeEmissions,
   recomputeSupplierPassport,
+  runAuditSimulation,
   runCalculation,
   runComplianceEvaluation,
   runExtractionPipeline,
   runQualityScan,
   transitionEvidence,
+  updateFinding,
   upsertControl,
   withOrgContext,
   withPlatformContext,
@@ -68,7 +72,9 @@ async function main(): Promise<void> {
 
   const existing = await prisma.organization.findUnique({ where: { slug: DEMO.slug } });
   if (existing) {
-    console.warn(`[seed] Organization "${DEMO.slug}" already exists (${existing.id}). Nothing to do.`);
+    console.warn(
+      `[seed] Organization "${DEMO.slug}" already exists (${existing.id}). Nothing to do.`,
+    );
     return;
   }
 
@@ -168,7 +174,9 @@ async function main(): Promise<void> {
   console.warn('[seed] Evidence records and linked datapoints created.');
 
   await seedCarbon();
-  console.warn('[seed] Emission factors, activity data, calculations, and FY2025 emissions created.');
+  console.warn(
+    '[seed] Emission factors, activity data, calculations, and FY2025 emissions created.',
+  );
 
   await seedAiExtraction();
   console.warn('[seed] Demo document processed through the extraction pipeline (stub provider).');
@@ -178,7 +186,116 @@ async function main(): Promise<void> {
 
   await seedCompliance();
   console.warn('[seed] ESRS rule store loaded and evaluated against FY2025 data.');
-  console.warn('[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).');
+
+  await seedAudit();
+  console.warn('[seed] Audit readiness simulated, engagement opened, audit package generated.');
+  console.warn(
+    '[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).',
+  );
+}
+
+async function seedAudit(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const adminId = DEMO.users.admin.id;
+
+  const storage = createStorageService({
+    driver: 'local',
+    dir: process.env.STORAGE_LOCAL_DIR ?? '.data/documents',
+    signingSecret:
+      process.env.STORAGE_SIGNING_SECRET ?? 'dev-only-storage-signing-secret-change-me',
+    apiPublicUrl: process.env.API_PUBLIC_URL ?? 'http://localhost:4000',
+  });
+
+  await withOrgContext(orgId, async (db) => {
+    const audit = await createAudit(db, {
+      organizationId: orgId,
+      name: 'FY2025 CSRD readiness review',
+      scope:
+        'ESRS E1 climate — Scope 1/2/3, energy, targets. Value-chain coverage for key suppliers.',
+      reportingPeriod: 'FY2025',
+      periodStart: '2025-01-01',
+      periodEnd: '2025-12-31',
+      leadAuditorUserId: DEMO.users.auditor.id,
+      externalAuditor: 'Prüfwerk Wirtschaftsprüfung GmbH',
+      ruleStoreVersion: RULE_STORE_VERSION,
+      notes: 'Pre-assurance dry run.',
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
+
+    const sim = await runAuditSimulation(db, {
+      organizationId: orgId,
+      auditId: audit.id,
+      reportingPeriod: 'FY2025',
+      ruleStoreVersion: RULE_STORE_VERSION,
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
+
+    // Triage a couple of the simulation findings so the workspace isn't all "open".
+    const findings = await db.auditFinding.findMany({
+      where: { organizationId: orgId, source: 'simulation', status: 'open' },
+      orderBy: { severity: 'asc' },
+      take: 2,
+    });
+    if (findings[0]) {
+      await updateFinding(db, {
+        organizationId: orgId,
+        findingId: findings[0].id,
+        status: 'acknowledged',
+        note: 'Seen — remediation planned before assurance fieldwork.',
+        actorUserId: adminId,
+        requestId: 'seed',
+      });
+    }
+    if (findings[1]) {
+      await updateFinding(db, {
+        organizationId: orgId,
+        findingId: findings[1].id,
+        status: 'remediating',
+        assignedToUserId: DEMO.users.analyst.id,
+        actorUserId: adminId,
+        requestId: 'seed',
+      });
+    }
+
+    const pkg = await generateAuditPackage(
+      db,
+      {
+        driver: 'local',
+        putBytes: (key, bytes, contentType) => storage.put({ key, body: bytes, contentType }),
+      },
+      {
+        organizationId: orgId,
+        auditId: audit.id,
+        reportingPeriod: 'FY2025',
+        ruleStoreVersion: RULE_STORE_VERSION,
+        actorUserId: adminId,
+        requestId: 'seed',
+      },
+    );
+
+    await writeAuditLog(db, {
+      organizationId: orgId,
+      actorId: adminId,
+      action: 'seed.audit_workspace_completed',
+      resourceType: 'audit',
+      resourceId: audit.id,
+      before: null,
+      after: {
+        readinessValue: sim.readiness.value,
+        readinessBand: sim.readiness.band,
+        findingsOpen: sim.findingsOpen,
+        packageDigest: pkg.contentDigest,
+      },
+      requestId: 'seed',
+    });
+
+    console.warn(
+      `[seed]   → readiness ${sim.readiness.value}/100 (${sim.readiness.band}), ` +
+        `${sim.findingsOpen} findings open, package ${pkg.contentDigest.slice(0, 12)}.`,
+    );
+  });
 }
 
 const RULE_STORE_VERSION = 'esrs@2026.1';
@@ -347,15 +464,25 @@ async function seedAiExtraction(): Promise<void> {
   const buffer = Buffer.from(DEMO_REPORT_TEXT, 'utf8');
   const checksum = createHash('sha256').update(buffer).digest('hex');
   const filename = '2025 Sustainability Report.txt';
-  const storageKey = documentStorageKey({ organizationId: orgId, checksumSha256: checksum, filename });
+  const storageKey = documentStorageKey({
+    organizationId: orgId,
+    checksumSha256: checksum,
+    filename,
+  });
 
   const storage = createStorageService({
     driver: 'local',
     dir: process.env.STORAGE_LOCAL_DIR ?? '.data/documents',
-    signingSecret: process.env.STORAGE_SIGNING_SECRET ?? 'dev-only-storage-signing-secret-change-me',
+    signingSecret:
+      process.env.STORAGE_SIGNING_SECRET ?? 'dev-only-storage-signing-secret-change-me',
     apiPublicUrl: process.env.API_PUBLIC_URL ?? 'http://localhost:4000',
   });
-  await storage.put({ key: storageKey, body: buffer, contentType: 'text/plain', checksumSha256: checksum });
+  await storage.put({
+    key: storageKey,
+    body: buffer,
+    contentType: 'text/plain',
+    checksumSha256: checksum,
+  });
 
   const provider = createAIProvider({
     mode: 'stub',
@@ -848,9 +975,24 @@ async function seedEvidence(): Promise<void> {
 
     await db.datapointEvidence.createMany({
       data: [
-        { organizationId: orgId, datapointId: dp1.id, evidenceId: report.id, linkedByUserId: analystId },
-        { organizationId: orgId, datapointId: dp2.id, evidenceId: report.id, linkedByUserId: analystId },
-        { organizationId: orgId, datapointId: dp3.id, evidenceId: cert.id, linkedByUserId: analystId },
+        {
+          organizationId: orgId,
+          datapointId: dp1.id,
+          evidenceId: report.id,
+          linkedByUserId: analystId,
+        },
+        {
+          organizationId: orgId,
+          datapointId: dp2.id,
+          evidenceId: report.id,
+          linkedByUserId: analystId,
+        },
+        {
+          organizationId: orgId,
+          datapointId: dp3.id,
+          evidenceId: cert.id,
+          linkedByUserId: analystId,
+        },
       ],
     });
 
@@ -875,26 +1017,166 @@ const SUPPLIER_ROWS: Array<{
   tier: number;
   spend: number;
 }> = [
-  { name: 'Rheinstahl Walzwerke GmbH', country: 'DE', nace: '24.10', category: 'Steel', tier: 1, spend: 41_800_000 },
-  { name: 'Aluminium Nord AS', country: 'NO', nace: '24.42', category: 'Aluminium', tier: 1, spend: 28_400_000 },
-  { name: 'Polymères de la Loire SA', country: 'FR', nace: '20.16', category: 'Polymers', tier: 1, spend: 22_100_000 },
-  { name: 'Iberia Fundición S.L.', country: 'ES', nace: '24.51', category: 'Castings', tier: 1, spend: 17_650_000 },
-  { name: 'Baltic Wire Components UAB', country: 'LT', nace: '25.93', category: 'Fasteners', tier: 2, spend: 9_300_000 },
-  { name: 'Vlaamse Coatings NV', country: 'BE', nace: '20.30', category: 'Coatings', tier: 2, spend: 7_900_000 },
-  { name: 'Bohemia Precision Machining s.r.o.', country: 'CZ', nace: '25.62', category: 'Machining', tier: 2, spend: 12_400_000 },
-  { name: 'Nordic Bearings AB', country: 'SE', nace: '28.15', category: 'Bearings', tier: 1, spend: 15_200_000 },
-  { name: 'Adriatic Electronics d.o.o.', country: 'HR', nace: '26.11', category: 'Electronics', tier: 2, spend: 6_100_000 },
-  { name: 'Helvetia Sensor Systems AG', country: 'CH', nace: '26.51', category: 'Sensors', tier: 1, spend: 13_750_000 },
-  { name: 'Lisboa Cabos e Condutores SA', country: 'PT', nace: '27.32', category: 'Cabling', tier: 2, spend: 4_800_000 },
-  { name: 'Magyar Öntöde Zrt.', country: 'HU', nace: '24.54', category: 'Castings', tier: 2, spend: 5_600_000 },
-  { name: 'Green Logistics Benelux BV', country: 'NL', nace: '49.41', category: 'Logistics', tier: 1, spend: 19_900_000 },
-  { name: 'Suomi Metalliteollisuus Oy', country: 'FI', nace: '25.11', category: 'Structural metal', tier: 1, spend: 11_050_000 },
-  { name: 'Danube Rubber Technik GmbH', country: 'AT', nace: '22.19', category: 'Rubber parts', tier: 2, spend: 3_950_000 },
-  { name: 'Éire Industrial Gases Ltd', country: 'IE', nace: '20.11', category: 'Industrial gases', tier: 2, spend: 2_700_000 },
-  { name: 'Śląsk Forging S.A.', country: 'PL', nace: '25.50', category: 'Forgings', tier: 1, spend: 14_600_000 },
-  { name: 'Hellenic Insulation ABEE', country: 'GR', nace: '23.99', category: 'Insulation', tier: 3, spend: 1_450_000 },
-  { name: 'Dansk Overfladeteknik A/S', country: 'DK', nace: '25.61', category: 'Surface treatment', tier: 2, spend: 4_200_000 },
-  { name: 'Carpathia Tooling SRL', country: 'RO', nace: '25.73', category: 'Tooling', tier: 3, spend: 1_900_000 },
+  {
+    name: 'Rheinstahl Walzwerke GmbH',
+    country: 'DE',
+    nace: '24.10',
+    category: 'Steel',
+    tier: 1,
+    spend: 41_800_000,
+  },
+  {
+    name: 'Aluminium Nord AS',
+    country: 'NO',
+    nace: '24.42',
+    category: 'Aluminium',
+    tier: 1,
+    spend: 28_400_000,
+  },
+  {
+    name: 'Polymères de la Loire SA',
+    country: 'FR',
+    nace: '20.16',
+    category: 'Polymers',
+    tier: 1,
+    spend: 22_100_000,
+  },
+  {
+    name: 'Iberia Fundición S.L.',
+    country: 'ES',
+    nace: '24.51',
+    category: 'Castings',
+    tier: 1,
+    spend: 17_650_000,
+  },
+  {
+    name: 'Baltic Wire Components UAB',
+    country: 'LT',
+    nace: '25.93',
+    category: 'Fasteners',
+    tier: 2,
+    spend: 9_300_000,
+  },
+  {
+    name: 'Vlaamse Coatings NV',
+    country: 'BE',
+    nace: '20.30',
+    category: 'Coatings',
+    tier: 2,
+    spend: 7_900_000,
+  },
+  {
+    name: 'Bohemia Precision Machining s.r.o.',
+    country: 'CZ',
+    nace: '25.62',
+    category: 'Machining',
+    tier: 2,
+    spend: 12_400_000,
+  },
+  {
+    name: 'Nordic Bearings AB',
+    country: 'SE',
+    nace: '28.15',
+    category: 'Bearings',
+    tier: 1,
+    spend: 15_200_000,
+  },
+  {
+    name: 'Adriatic Electronics d.o.o.',
+    country: 'HR',
+    nace: '26.11',
+    category: 'Electronics',
+    tier: 2,
+    spend: 6_100_000,
+  },
+  {
+    name: 'Helvetia Sensor Systems AG',
+    country: 'CH',
+    nace: '26.51',
+    category: 'Sensors',
+    tier: 1,
+    spend: 13_750_000,
+  },
+  {
+    name: 'Lisboa Cabos e Condutores SA',
+    country: 'PT',
+    nace: '27.32',
+    category: 'Cabling',
+    tier: 2,
+    spend: 4_800_000,
+  },
+  {
+    name: 'Magyar Öntöde Zrt.',
+    country: 'HU',
+    nace: '24.54',
+    category: 'Castings',
+    tier: 2,
+    spend: 5_600_000,
+  },
+  {
+    name: 'Green Logistics Benelux BV',
+    country: 'NL',
+    nace: '49.41',
+    category: 'Logistics',
+    tier: 1,
+    spend: 19_900_000,
+  },
+  {
+    name: 'Suomi Metalliteollisuus Oy',
+    country: 'FI',
+    nace: '25.11',
+    category: 'Structural metal',
+    tier: 1,
+    spend: 11_050_000,
+  },
+  {
+    name: 'Danube Rubber Technik GmbH',
+    country: 'AT',
+    nace: '22.19',
+    category: 'Rubber parts',
+    tier: 2,
+    spend: 3_950_000,
+  },
+  {
+    name: 'Éire Industrial Gases Ltd',
+    country: 'IE',
+    nace: '20.11',
+    category: 'Industrial gases',
+    tier: 2,
+    spend: 2_700_000,
+  },
+  {
+    name: 'Śląsk Forging S.A.',
+    country: 'PL',
+    nace: '25.50',
+    category: 'Forgings',
+    tier: 1,
+    spend: 14_600_000,
+  },
+  {
+    name: 'Hellenic Insulation ABEE',
+    country: 'GR',
+    nace: '23.99',
+    category: 'Insulation',
+    tier: 3,
+    spend: 1_450_000,
+  },
+  {
+    name: 'Dansk Overfladeteknik A/S',
+    country: 'DK',
+    nace: '25.61',
+    category: 'Surface treatment',
+    tier: 2,
+    spend: 4_200_000,
+  },
+  {
+    name: 'Carpathia Tooling SRL',
+    country: 'RO',
+    nace: '25.73',
+    category: 'Tooling',
+    tier: 3,
+    spend: 1_900_000,
+  },
 ];
 
 /** Questionnaire responses for the three suppliers with a completed passport. */
@@ -1066,7 +1348,11 @@ async function seedSuppliers(): Promise<void> {
       resourceType: 'organization',
       resourceId: orgId,
       before: null,
-      after: { suppliers: SUPPLIER_ROWS.length, passports: Object.keys(SEEDED_RESPONSES).length, demo: true },
+      after: {
+        suppliers: SUPPLIER_ROWS.length,
+        passports: Object.keys(SEEDED_RESPONSES).length,
+        demo: true,
+      },
       requestId: 'seed',
     });
   });

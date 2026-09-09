@@ -53,9 +53,11 @@ export const NAV: NavSection[] = [
   {
     label: 'Audit',
     items: [
-      { label: 'Readiness', href: '/audit/readiness' },
-      { label: 'Evidence Review', href: '/audit/review' },
-      { label: 'Controls', href: '/audit/controls' },
+      { label: 'Readiness', href: '/audit/readiness', ready: true },
+      { label: 'Findings', href: '/audit/findings', ready: true },
+      { label: 'Evidence Review', href: '/audit/review', ready: true },
+      { label: 'Controls', href: '/audit/controls', ready: true },
+      { label: 'Audit Package', href: '/audit/packages', ready: true },
       { label: 'Activity Log', href: '/audit/log', ready: true },
     ],
   },

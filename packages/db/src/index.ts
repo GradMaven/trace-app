@@ -81,3 +81,22 @@ export type {
   RunComplianceArgs,
   RunComplianceResult,
 } from './compliance';
+
+export {
+  runAuditSimulation,
+  createAudit,
+  updateAudit,
+  createFinding,
+  updateFinding,
+  generateAuditPackage,
+  auditReadiness,
+  evidenceReviewList,
+  evidenceChain,
+} from './audit-workspace';
+export type {
+  RunAuditSimulationArgs,
+  RunAuditSimulationResult,
+  AuditPackageDeps,
+  GenerateAuditPackageArgs,
+  GenerateAuditPackageResult,
+} from './audit-workspace';

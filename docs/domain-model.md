@@ -227,6 +227,17 @@ mapping_complete`; `review_required` overrides when data exists but has a proble
 | `AuditPackage` | Exportable bundle: evidence, calculations, assumptions, approvals, changes, verification status. |
 | `AuditSimulationRun` | Result of scanning the org: readiness %, counts, itemised issues, each linking to its object. |
 
+**Implementation status (Phase 8).** `@trace/domain/audit.assessReadiness`
+(`audit-readiness@1.0.0`) is a pure additive 0–100 score over evidence verification,
+calculation reproducibility and approval, data quality, Trust level, compliance mapping and
+audit-trail integrity, returning a per-dimension breakdown and itemised issues. `@trace/db`
+`runAuditSimulation` composes `reproduceCalculation`, `verifyAuditChain`, the data-quality
+issues, Trust Scores and the compliance mappings, and persists `audit_simulation_run` +
+idempotent `audit_finding` rows; `generateAuditPackage` writes a content-addressed
+canonical-JSON bundle to object storage. See
+[data-model.md](data-model.md#audit-workspace-phase-8) and
+[ADR-008](decisions/ADR-008-audit-workspace.md).
+
 ### Process & Ops
 
 | Entity | Notes |

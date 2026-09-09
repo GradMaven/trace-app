@@ -124,6 +124,10 @@ model Organization {
   complianceMappings  ComplianceMapping[]
   disclosureStatuses  DisclosureStatusRecord[]
   complianceRuns      ComplianceRun[]
+  audits              Audit[]
+  auditFindings       AuditFinding[]
+  auditSimulationRuns AuditSimulationRun[]
+  auditPackages       AuditPackage[]
 
   @@map("organization")
 }
@@ -1398,4 +1402,181 @@ model ComplianceRun {
 
   @@index([organizationId, startedAt])
   @@map("compliance_run")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 — Audit workspace
+// ---------------------------------------------------------------------------
+
+enum AuditStatus {
+  planning
+  fieldwork
+  review
+  complete
+
+  @@map("audit_status")
+}
+
+enum FindingSeverity {
+  critical
+  warning
+  info
+
+  @@map("finding_severity")
+}
+
+enum FindingSource {
+  manual
+  simulation
+
+  @@map("finding_source")
+}
+
+enum FindingStatus {
+  open
+  acknowledged
+  remediating
+  resolved
+  accepted_risk
+  dismissed
+
+  @@map("finding_status")
+}
+
+enum AuditPackageStatus {
+  generating
+  ready
+  failed
+
+  @@map("audit_package_status")
+}
+
+/// An audit engagement: a scope + period a person or an external auditor is
+/// assessing. Findings and packages may be attached to one.
+model Audit {
+  id                 String      @id @default(uuid()) @db.Uuid
+  organizationId     String      @map("organization_id") @db.Uuid
+  name               String
+  scope              String      @default("")
+  reportingPeriod    String?     @map("reporting_period")
+  periodStart        DateTime?   @map("period_start") @db.Date
+  periodEnd          DateTime?   @map("period_end") @db.Date
+  status             AuditStatus @default(planning)
+  leadAuditorUserId  String?     @map("lead_auditor_user_id") @db.Uuid
+  externalAuditor    String?     @map("external_auditor")
+  ruleStoreVersion   String?     @map("rule_store_version")
+  notes              String?
+  createdByUserId    String      @map("created_by_user_id") @db.Uuid
+  createdAt          DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  closedAt           DateTime?   @map("closed_at") @db.Timestamptz(6)
+
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  findings       AuditFinding[]
+  simulationRuns AuditSimulationRun[]
+  packages       AuditPackage[]
+
+  @@index([organizationId, status])
+  @@map("audit")
+}
+
+/// An issue against audit readiness. `source = simulation` rows are idempotent
+/// on `dedupeKey`: a re-run refreshes an open one and auto-resolves ones no
+/// longer detected; `accepted_risk` / `dismissed` are sticky. `source = manual`
+/// rows are raised by a person and never auto-resolved.
+model AuditFinding {
+  id                 String          @id @default(uuid()) @db.Uuid
+  organizationId     String          @map("organization_id") @db.Uuid
+  auditId            String?         @map("audit_id") @db.Uuid
+  simulationRunId    String?         @map("simulation_run_id") @db.Uuid
+  source             FindingSource   @default(manual)
+  severity           FindingSeverity
+  kind               String?
+  status             FindingStatus   @default(open)
+  subjectType        String          @map("subject_type")
+  subjectId          String          @map("subject_id")
+  dedupeKey          String          @map("dedupe_key")
+  title              String
+  detail             String
+  recommendation     String?
+  raisedByUserId     String?         @map("raised_by_user_id") @db.Uuid
+  assignedToUserId   String?         @map("assigned_to_user_id") @db.Uuid
+  dueOn              DateTime?       @map("due_on") @db.Date
+  firstDetectedAt    DateTime        @default(now()) @map("first_detected_at") @db.Timestamptz(6)
+  lastSeenAt         DateTime        @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  resolvedByUserId   String?         @map("resolved_by_user_id") @db.Uuid
+  resolvedAt         DateTime?       @map("resolved_at") @db.Timestamptz(6)
+  resolutionNote     String?         @map("resolution_note")
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization  Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  audit         Audit?             @relation(fields: [auditId], references: [id], onDelete: SetNull)
+  simulationRun AuditSimulationRun? @relation(fields: [simulationRunId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, dedupeKey])
+  @@index([organizationId, status, severity])
+  @@index([organizationId, auditId])
+  @@map("audit_finding")
+}
+
+/// One run of the audit-readiness simulation. Stores the additive breakdown and
+/// itemised issue counts; each run writes / refreshes `audit_finding` rows.
+model AuditSimulationRun {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  auditId          String?  @map("audit_id") @db.Uuid
+  reportingPeriod  String?  @map("reporting_period")
+  ruleStoreVersion String?  @map("rule_store_version")
+  readinessValue   Int      @map("readiness_value")
+  readinessBand    String   @map("readiness_band")
+  breakdown        Json     @default("[]")
+  issueCounts      Json     @default("{}") @map("issue_counts")
+  findingsOpened   Int      @default(0) @map("findings_opened")
+  findingsResolved Int      @default(0) @map("findings_resolved")
+  findingsOpen     Int      @default(0) @map("findings_open")
+  modelVersion     String   @map("model_version")
+  ranByUserId      String?  @map("ran_by_user_id") @db.Uuid
+  startedAt        DateTime @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt      DateTime? @map("completed_at") @db.Timestamptz(6)
+  durationMs       Int      @default(0) @map("duration_ms")
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  audit        Audit?         @relation(fields: [auditId], references: [id], onDelete: SetNull)
+  findings     AuditFinding[]
+
+  @@index([organizationId, startedAt])
+  @@map("audit_simulation_run")
+}
+
+/// An exportable, content-addressed bundle: organization profile, readiness
+/// snapshot, evidence + verifications, calculations + steps + reproducibility,
+/// datapoints + lineage + Trust, compliance overview + mappings + gaps, open
+/// findings, and the audit-log chain verification. Written to object storage as
+/// canonical JSON.
+model AuditPackage {
+  id               String             @id @default(uuid()) @db.Uuid
+  organizationId   String             @map("organization_id") @db.Uuid
+  auditId          String?            @map("audit_id") @db.Uuid
+  reportingPeriod  String?            @map("reporting_period")
+  ruleStoreVersion String?            @map("rule_store_version")
+  status           AuditPackageStatus @default(generating)
+  format           String             @default("json")
+  storageKey       String?            @map("storage_key")
+  storageDriver    String?            @map("storage_driver")
+  sizeBytes        Int?               @map("size_bytes")
+  checksumSha256   String?            @map("checksum_sha256")
+  contentDigest    String             @default("") @map("content_digest")
+  manifest         Json               @default("{}")
+  readinessValue   Int?               @map("readiness_value")
+  generatedByUserId String?           @map("generated_by_user_id") @db.Uuid
+  generatedAt      DateTime?          @map("generated_at") @db.Timestamptz(6)
+  error            String?
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  audit        Audit?       @relation(fields: [auditId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@map("audit_package")
 }

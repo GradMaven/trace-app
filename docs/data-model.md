@@ -426,6 +426,55 @@ compliance_run(id, organization_id, rule_store_version, reporting_period NULL, d
   `disclosure_status`, `compliance_run` — migration `0014_compliance_rls`. The rule-store
   tables are global and deliberately not RLS'd.
 
+### Audit workspace (Phase 8)
+
+```
+audit(id, organization_id, name, scope, reporting_period NULL, period_start date NULL,
+      period_end date NULL, status audit_status, lead_auditor_user_id NULL,
+      external_auditor NULL, rule_store_version NULL, notes NULL, created_by_user_id,
+      created_at, updated_at, closed_at NULL)
+audit_simulation_run(id, organization_id, audit_id NULL, reporting_period NULL,
+                     rule_store_version NULL, readiness_value int, readiness_band,
+                     breakdown jsonb, issue_counts jsonb, findings_opened, findings_resolved,
+                     findings_open, model_version, ran_by_user_id NULL, started_at,
+                     completed_at NULL, duration_ms)
+audit_finding(id, organization_id, audit_id NULL, simulation_run_id NULL, source finding_source,
+              severity finding_severity, kind NULL, status finding_status, subject_type,
+              subject_id, dedupe_key, title, detail, recommendation NULL, raised_by_user_id NULL,
+              assigned_to_user_id NULL, due_on date NULL, first_detected_at, last_seen_at,
+              resolved_by_user_id NULL, resolved_at NULL, resolution_note NULL, created_at,
+              updated_at, UNIQUE(organization_id, dedupe_key))
+audit_package(id, organization_id, audit_id NULL, reporting_period NULL, rule_store_version NULL,
+              status audit_package_status, format, storage_key NULL, storage_driver NULL,
+              size_bytes NULL, checksum_sha256 NULL, content_digest, manifest jsonb,
+              readiness_value NULL, generated_by_user_id NULL, generated_at NULL, error NULL,
+              created_at)
+```
+
+- **`@trace/domain/audit.assessReadiness`** (`audit-readiness@1.0.0`, pure) — a documented
+  additive 0–100 score over seven dimensions (evidence verified 25, calculations
+  reproducible 20 / approved 15, data quality 15, Trust level 10, compliance mapping 10,
+  audit-trail integrity 5), returning a per-dimension breakdown and itemised issues, each
+  carrying a `subjectType` / `subjectId`.
+- `@trace/db` orchestrator `runAuditSimulation` gathers the tenant's evidence (verified /
+  expired counts), calculations (`reproduceCalculation` per row, approval flag),
+  data-quality issues, Trust Scores, compliance mappings and `verifyAuditChain`, runs the
+  assessment, and **idempotently** upserts `audit_finding` rows (`source = simulation`,
+  `dedupe_key = sim:<kind>|<subjectType>|<subjectId>`) — a re-run refreshes open findings,
+  auto-resolves ones no longer detected, and leaves `accepted_risk` / `dismissed` alone.
+  `source = manual` findings are raised by a person and never auto-resolved.
+- `generateAuditPackage` assembles a canonical-JSON bundle (meta + disclaimer, organization,
+  readiness breakdown, `summariseInventory`, evidence + verifications, calculations + steps +
+  a live `reproduce` check, datapoints + lineage refs + Trust, compliance mappings + gaps,
+  open findings, audit-log chain verification + head hash), writes it to object storage via
+  an injected `putBytes`, and content-addresses it by SHA-256. `manifest` holds the counts.
+- Other orchestrators: `createAudit` / `updateAudit`, `createFinding` / `updateFinding`,
+  `evidenceReviewList`, `evidenceChain`. Every mutation is hash-chain audit-logged
+  (`audit.simulation_completed`, `audit.finding_raised` / `_updated`,
+  `audit.engagement_created` / `_updated`, `audit.package_generated`).
+- RLS (`FORCE`, `current_org()`) on `audit`, `audit_finding`, `audit_simulation_run`,
+  `audit_package` — migration `0016_audit_rls`.
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

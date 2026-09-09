@@ -98,6 +98,7 @@ export const ROLE_DEFINITIONS: Record<RoleKey, RoleDefinition> = {
       'compliance.read',
       'compliance.manage',
       'audit.read',
+      'audit.manage',
       'auditlog.read',
       'report.generate',
     ],

@@ -27,6 +27,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { CandidateDatapointsModule } from './modules/candidate-datapoints/candidate-datapoints.module';
 import { TrustModule } from './modules/trust/trust.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
+import { AuditWorkspaceModule } from './modules/audit/audit.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { ComplianceModule } from './modules/compliance/compliance.module';
     CandidateDatapointsModule,
     TrustModule,
     ComplianceModule,
+    AuditWorkspaceModule,
   ],
   providers: [
     CatalogBootstrap,

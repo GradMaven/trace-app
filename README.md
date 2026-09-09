@@ -29,6 +29,25 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 8 — Audit workspace (landed).** On top of Phases 1–7: `@trace/domain/audit` — a
+documented additive **audit-readiness score** (`audit-readiness@1.0.0`, 0–100) over evidence
+verification, calculation reproducibility and approval, data quality, Trust level,
+compliance mapping and audit-trail integrity, with a per-dimension breakdown and itemised
+issues that each point at their object. `@trace/db` adds `audit` engagements,
+`audit_finding` (idempotent re-runs, auto-resolve, sticky *accepted risk* / *dismissed*),
+`audit_simulation_run` and `audit_package` (RLS on all four). `runAuditSimulation` composes
+`reproduceCalculation`, `verifyAuditChain`, the data-quality issues, Trust Scores and the
+compliance mappings; `generateAuditPackage` assembles a canonical-JSON bundle — evidence +
+verifications, calculations + steps + a live reproduce check, datapoints + lineage + Trust,
+compliance mappings + gaps, open findings, and the audit-log chain verification — written
+to object storage and content-addressed by its SHA-256. Web adds Audit → Readiness,
+Findings, Evidence Review with a per-datapoint **evidence-chain walk** (disclosure →
+datapoint → calculation → activity → factor → evidence), Controls, and Audit Package
+(generate + download). Builds, typechecks, lints and unit tests are green; the
+Postgres-dependent integration suites (RLS / tenant isolation, supplier, evidence, carbon,
+AI extraction, trust, compliance, audit) run in CI. See [docs/roadmap.md](docs/roadmap.md)
+for exact status and what's next (Phase 9 — Command Center).
+
 **Phase 7 — Compliance (landed).** On top of Phases 1–6: the new **`@trace/compliance`**
 package — a **versioned regulatory rule store** (frozen typed data; `esrs@2026.1` covers
 ESRS E1 climate: transition plan, targets, energy & mix, gross Scope 1/2/3) and a generic,
@@ -59,7 +78,9 @@ idempotent `data_quality_issue` / `anomaly` model (dedupe key, auto-resolve, sti
 dismiss) and a `quality_scan` run record; `runQualityScan` scores every in-scope datapoint,
 refreshes issues, detects anomalies and writes one audit entry. Web adds **Data → Data
 Quality** (dashboard, scan history, run scan), issue and anomaly triage queues, and the
-Trust Score breakdown on the datapoint page.
+Trust Score breakdown on the datapoint page. *(For brevity, phase-by-phase notes for
+Phases 1–6 have been trimmed — see [docs/roadmap.md](docs/roadmap.md) for the full
+per-phase status.)*
 
 Reference documents:
 
