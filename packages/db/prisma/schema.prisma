@@ -128,6 +128,7 @@ model Organization {
   auditFindings       AuditFinding[]
   auditSimulationRuns AuditSimulationRun[]
   auditPackages       AuditPackage[]
+  askQueries          AskQuery[]
 
   @@map("organization")
 }
@@ -1579,4 +1580,38 @@ model AuditPackage {
 
   @@index([organizationId, createdAt])
   @@map("audit_package")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 10 — Ask TRACE
+// ---------------------------------------------------------------------------
+
+/// One natural-language question and its retrieval-grounded answer. `intent` is
+/// a fixed catalog value chosen by the model; `citations` are the retrieved
+/// records the answer relied on (each with a UI href). `answered = false` when
+/// retrieval returned nothing or the model judged the records insufficient.
+model AskQuery {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  question        String
+  intent          String
+  reportingPeriod String?  @map("reporting_period")
+  answered        Boolean  @default(false)
+  answer          String   @default("")
+  recordCount     Int      @default(0) @map("record_count")
+  citations       Json     @default("[]")
+  aiJobIds        String[] @map("ai_job_ids") @db.Uuid
+  provider        String?
+  model           String?
+  tokensIn        Int      @default(0) @map("tokens_in")
+  tokensOut       Int      @default(0) @map("tokens_out")
+  costEur         Decimal  @default(0) @map("cost_eur") @db.Decimal(12, 6)
+  latencyMs       Int      @default(0) @map("latency_ms")
+  askedByUserId   String?  @map("asked_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@map("ask_query")
 }

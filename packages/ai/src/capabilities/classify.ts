@@ -1,8 +1,5 @@
 import type { AIProvider, StructuredResult } from '../types';
-import {
-  CLASSIFICATION_PROMPT_VERSION,
-  CLASSIFICATION_SYSTEM_PROMPT,
-} from '../prompts';
+import { CLASSIFICATION_PROMPT_VERSION, CLASSIFICATION_SYSTEM_PROMPT } from '../prompts';
 import { classificationSchema, type ClassificationResult } from '../schemas';
 import { CLASSIFICATION_TOOL_SCHEMA } from './tool-schemas';
 

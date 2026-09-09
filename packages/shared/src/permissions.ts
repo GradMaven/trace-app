@@ -53,6 +53,9 @@ export const PERMISSIONS = {
   'candidate.review': 'Promote or reject candidate datapoints',
   'ai.read': 'View the AI operation log (models, tokens, cost, status)',
 
+  // Ask TRACE (natural-language analytics over the tenant's own records)
+  'ask.use': 'Ask TRACE natural-language questions about this workspace',
+
   // Trust & data quality
   'trust.read': 'View Trust Scores, data-quality issues, and anomalies',
   'trust.run': 'Run Trust Score computation and data-quality scans',

@@ -50,3 +50,41 @@ export const extractionSchema = z.object({
   candidates: z.array(candidateSchema).max(50),
 });
 export type ExtractionResult = z.infer<typeof extractionSchema>;
+
+/**
+ * Ask TRACE (Phase 10). The model NEVER authors a query and NEVER answers a
+ * factual question about the tenant from parametric knowledge. It only (1) maps
+ * a free-text question to one of these fixed intents, and (2) composes an answer
+ * from a set of numbered records that `@trace/db` retrieved with hand-written,
+ * tenant-scoped queries.
+ */
+export const ASK_INTENTS = [
+  'emissions_summary',
+  'emissions_trend',
+  'top_scope3_categories',
+  'top_suppliers_by_emissions',
+  'missing_evidence',
+  'estimated_datapoints',
+  'outdated_factors',
+  'low_trust_datapoints',
+  'compliance_gaps',
+  'open_findings',
+  'data_quality_issues',
+  'unsupported',
+] as const;
+export type AskIntent = (typeof ASK_INTENTS)[number];
+
+export const askIntentSchema = z.object({
+  intent: z.enum(ASK_INTENTS),
+  reportingPeriod: z.string().max(60).nullable(),
+  comparePeriod: z.string().max(60).nullable(),
+  confidence: z.number().min(0).max(100),
+});
+export type AskIntentResult = z.infer<typeof askIntentSchema>;
+
+export const askAnswerSchema = z.object({
+  answer: z.string().min(1).max(4000),
+  /** The record numbers the answer relies on. Empty means "the records do not answer this". */
+  citedRefs: z.array(z.number().int().min(1).max(200)).max(40),
+});
+export type AskAnswerResult = z.infer<typeof askAnswerSchema>;

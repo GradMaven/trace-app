@@ -103,3 +103,6 @@ export type {
 
 export { commandCenterOverview } from './command-center';
 export type { CommandCenterOverview } from './command-center';
+
+export { runAskQuery, askHistory, askQueryById } from './ask';
+export type { AskDeps, RunAskQueryArgs, RunAskQueryResult, RetrievedRecord } from './ask';

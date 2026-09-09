@@ -28,9 +28,22 @@
 - **`apps/api`** runs the pipeline synchronously (`POST /documents/:id/process`);
   **`apps/worker`** runs the same orchestrator off a `document-processing` BullMQ queue
   for production throughput.
-- Implemented capabilities: **Classification**, **Document Extraction**. Data Quality,
-  Evidence Reasoning, Compliance Mapping, Ask TRACE, Recommendations are later phases and
-  are absent (no stub, no fake UI).
+- Implemented capabilities: **Classification**, **Document Extraction**, and (Phase 10)
+  **Ask TRACE** (`nl_analytics`). Data Quality, Evidence Reasoning, Compliance Mapping and
+  Recommendations are later phases and are absent (no stub, no fake UI).
+
+## Ask TRACE — implementation status (Phase 10)
+
+- Two narrow model calls, both versioned and both stub-backed:
+  `classifyAskIntent` (`ask/intent@1`) maps the question to one of 11 fixed `ASK_INTENTS`
+  (+ an optional `FY####`), `composeAskAnswer` (`ask/answer@1`) writes an answer **grounded
+  only in the numbered records** and returns `citedRefs`.
+- Retrieval is **not** model-authored. `@trace/db.ask.ts` has a `RETRIEVALS` catalog of
+  hand-written, tenant-scoped queries; `runAskQuery` picks one by intent, runs it (≤ 40
+  rows), and only then makes the answer call. Empty retrieval / `unsupported` intent →
+  a fixed "nothing to report" answer and a single `ai_job`.
+- Every answer is an `ask_query` row (RLS) with its `citations` (each a UI link) and its
+  `aiJobIds`; both model calls are `ai_job` rows written before their output is used.
 
 ## Capabilities (not one monolithic service)
 

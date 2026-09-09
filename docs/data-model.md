@@ -486,6 +486,30 @@ trend), `qualitySummary`, `complianceGaps`, and lean group-bys over `datapoint` 
 No writes, no audit entry — every figure is read straight from a model row or an existing
 engine.
 
+### Ask TRACE (Phase 10)
+
+```
+ask_query(id, organization_id, question, intent, reporting_period NULL, answered bool,
+          answer, record_count, citations jsonb, ai_job_ids uuid[], provider NULL, model NULL,
+          tokens_in, tokens_out, cost_eur numeric(12,6), latency_ms, asked_by_user_id NULL,
+          created_at)
+```
+
+- **`@trace/ai`** capability `nl_analytics`: `classifyAskIntent` (question → one of 11 fixed
+  `ASK_INTENTS` + optional period, `ask/intent@1`), `composeAskAnswer` (question + numbered
+  records → `{ answer, citedRefs }`, `ask/answer@1`). The model **never** authors a query
+  (ADR-005, ADR-009).
+- **`@trace/db.ask.ts`** holds the `RETRIEVALS` catalog — hand-written, tenant-scoped Prisma
+  queries (via `inventorySummary`, `complianceGaps`, and direct group-bys / finds over
+  `datapoint` / `calculation` / `emission_factor` / `trust_score` / `audit_finding` /
+  `data_quality_issue` / `supplier`), each capped at 40 rows. `runAskQuery` = classify
+  intent → run one retrieval → (if rows) compose answer → persist `ask_query` with the
+  cited records (each carrying a UI `href`). Both model calls are `ai_job` rows
+  (`capability = nl_analytics`, `input_type = query`, `input_ref = ask_query.id`), written
+  before use. `answered = false` and no answer call when retrieval is empty or the intent
+  is `unsupported`.
+- RLS (`FORCE`, `current_org()`) on `ask_query` — migration `0018_ask_rls`.
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

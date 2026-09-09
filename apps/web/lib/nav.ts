@@ -62,7 +62,7 @@ export const NAV: NavSection[] = [
     ],
   },
   { label: '', items: [{ label: 'Reports', href: '/reports' }] },
-  { label: '', items: [{ label: 'Ask TRACE', href: '/ask' }] },
+  { label: '', items: [{ label: 'Ask TRACE', href: '/ask', ready: true }] },
   {
     label: 'Settings',
     items: [

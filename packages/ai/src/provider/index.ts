@@ -8,8 +8,7 @@ export { estimateCostEur } from './cost';
 
 export function createAIProvider(config: AIProviderConfig): AIProvider {
   const useClaude =
-    config.mode === 'claude' ||
-    (config.mode === 'auto' && !!config.anthropicApiKey);
+    config.mode === 'claude' || (config.mode === 'auto' && !!config.anthropicApiKey);
 
   if (useClaude) {
     if (!config.anthropicApiKey) {

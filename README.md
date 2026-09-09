@@ -29,6 +29,24 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 10 — Ask TRACE (landed).** On top of Phases 1–9: natural-language questions
+answered by **retrieval over the tenant's own records** — the model never writes a query and
+never answers a factual question about the workspace from outside knowledge. `@trace/ai`
+gains the `nl_analytics` capability (two narrow, versioned calls: map the question to one of
+11 fixed intents, then compose an answer **grounded only in a set of numbered records** and
+say which it cited). `@trace/db` holds a catalog of hand-written, tenant-scoped retrievals
+(emissions summary/trend, top Scope 3 categories, top suppliers, missing evidence, estimated
+datapoints, outdated factors, low-Trust datapoints, compliance gaps, open findings,
+data-quality issues); `runAskQuery` records **both model calls as `ai_job` rows** before
+their output is used, and when retrieval returns nothing (or the intent is `unsupported`)
+the answer says so and no second call is made. Every answer is stored as an `ask_query` row
+with its citations (each a clickable UI link). Web adds `/ask` — a question box with example
+prompts and answers that link to their sources. Builds, typechecks, lints and unit tests
+are green; the Postgres-dependent integration suites (RLS / tenant isolation, supplier,
+evidence, carbon, AI extraction, trust, compliance, audit, command center, ask) run in CI.
+See [docs/roadmap.md](docs/roadmap.md) for exact status and what's next (Phase 11 —
+Procurement intelligence).
+
 **Phase 9 — Command Center (landed).** On top of Phases 1–8: one read-only aggregate,
 `commandCenterOverview`, composes what the earlier phases already produce — the GHG
 inventory and a multi-period trend, the data-provenance mix (and the primary-data share),

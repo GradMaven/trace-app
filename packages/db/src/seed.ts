@@ -28,6 +28,7 @@ import {
   provisionOrganization,
   confirmMapping,
   loadRuleStore,
+  runAskQuery,
   recomputeEmissions,
   recomputeSupplierPassport,
   runAuditSimulation,
@@ -189,9 +190,44 @@ async function main(): Promise<void> {
 
   await seedAudit();
   console.warn('[seed] Audit readiness simulated, engagement opened, audit package generated.');
+
+  await seedAsk();
+  console.warn('[seed] Ask TRACE demo questions answered from the seeded records (stub provider).');
   console.warn(
     '[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).',
   );
+}
+
+async function seedAsk(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const analystId = DEMO.users.analyst.id;
+
+  const provider = createAIProvider({
+    mode: 'stub',
+    extractionModel: 'claude-sonnet-5',
+    classificationModel: 'claude-haiku-4-5',
+  });
+
+  const questions = [
+    'What are our Scope 1, 2 and 3 emissions for FY2025 and what is the total?',
+    'How did total emissions change between FY2024 and FY2025?',
+    'Which datapoints are missing supporting evidence?',
+    'Which ESRS disclosures are still incomplete?',
+  ];
+
+  await withOrgContext(orgId, async (db) => {
+    for (const question of questions) {
+      const res = await runAskQuery(
+        db,
+        { provider },
+        { organizationId: orgId, question, actorUserId: analystId, requestId: 'seed' },
+      );
+      console.warn(
+        `[seed]   → "${question.slice(0, 48)}…" — ${res.intent}, ` +
+          `${res.answered ? `${res.citations.length} sources` : 'no data'}.`,
+      );
+    }
+  });
 }
 
 async function seedAudit(): Promise<void> {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { classifyDocument } from '../capabilities/classify';
 import { extractDatapoints } from '../capabilities/extract';
+import { classifyAskIntent, composeAskAnswer } from '../capabilities/ask';
 import { StubAIProvider } from './stub';
 
 const REPORT = `NordWerk Manufacturing AG Sustainability Report 2025
@@ -52,7 +53,9 @@ describe('StubAIProvider — extraction', () => {
   });
 
   it('returns no candidates when the text has none', async () => {
-    const res = await extractDatapoints(provider, { text: 'A memo about the office coffee machine.' });
+    const res = await extractDatapoints(provider, {
+      text: 'A memo about the office coffee machine.',
+    });
     expect(res.output.candidates).toEqual([]);
   });
 
@@ -60,5 +63,55 @@ describe('StubAIProvider — extraction', () => {
     const a = await extractDatapoints(provider, { text: REPORT });
     const b = await extractDatapoints(provider, { text: REPORT });
     expect(a.output).toEqual(b.output);
+  });
+});
+
+describe('StubAIProvider — Ask TRACE (nl_analytics)', () => {
+  it('routes questions to a fixed intent and pulls out periods', async () => {
+    const cases: Array<[string, string]> = [
+      ['What were our Scope 3 emissions in FY2025?', 'emissions_summary'],
+      ['Why did emissions increase versus FY2024?', 'emissions_trend'],
+      ['Which suppliers contribute the most emissions?', 'top_suppliers_by_emissions'],
+      ['Show datapoints with no supporting evidence', 'missing_evidence'],
+      ['Which figures are estimated rather than measured?', 'estimated_datapoints'],
+      ['Do any calculations use an outdated emission factor?', 'outdated_factors'],
+      ['Which ESRS disclosures are still incomplete?', 'compliance_gaps'],
+      ['What is the capital of France?', 'unsupported'],
+    ];
+    for (const [question, intent] of cases) {
+      const res = await classifyAskIntent(provider, { question });
+      expect(res.provider).toBe('stub');
+      expect(res.output.intent).toBe(intent);
+    }
+    const withPeriod = await classifyAskIntent(provider, {
+      question: 'Compare Scope 1 for FY2025 vs FY2024',
+    });
+    expect(withPeriod.output.reportingPeriod).toBe('FY2025');
+    expect(withPeriod.output.comparePeriod).toBe('FY2024');
+  });
+
+  it('composes an answer only from the numbered records and cites them', async () => {
+    const records = [
+      { ref: 1, kind: 'emission', title: 'Scope 1', detail: '1303 tCO2e' },
+      { ref: 2, kind: 'emission', title: 'Scope 3', detail: '2719 tCO2e' },
+    ];
+    const res = await composeAskAnswer(provider, {
+      question: 'What are our emissions?',
+      intent: 'emissions_summary',
+      records,
+    });
+    expect(res.output.answer).toContain('1303 tCO2e');
+    expect(res.output.answer).toContain('2719 tCO2e');
+    expect(res.output.citedRefs.sort()).toEqual([1, 2]);
+  });
+
+  it('says so plainly when there are no records', async () => {
+    const res = await composeAskAnswer(provider, {
+      question: 'Which suppliers contribute most?',
+      intent: 'top_suppliers_by_emissions',
+      records: [],
+    });
+    expect(res.output.citedRefs).toEqual([]);
+    expect(res.output.answer.toLowerCase()).toContain('could not find');
   });
 });

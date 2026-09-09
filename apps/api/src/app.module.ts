@@ -29,6 +29,7 @@ import { TrustModule } from './modules/trust/trust.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
 import { AuditWorkspaceModule } from './modules/audit/audit.module';
 import { CommandCenterModule } from './modules/command-center/command-center.module';
+import { AskModule } from './modules/ask/ask.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { CommandCenterModule } from './modules/command-center/command-center.mod
     ComplianceModule,
     AuditWorkspaceModule,
     CommandCenterModule,
+    AskModule,
   ],
   providers: [
     CatalogBootstrap,

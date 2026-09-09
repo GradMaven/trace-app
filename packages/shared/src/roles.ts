@@ -31,6 +31,7 @@ export interface RoleDefinition {
 
 const READ_ONLY_SUSTAINABILITY: Permission[] = [
   'ai.read',
+  'ask.use',
   'organization.read',
   'member.read',
   'role.read',
@@ -101,6 +102,7 @@ export const ROLE_DEFINITIONS: Record<RoleKey, RoleDefinition> = {
       'audit.manage',
       'auditlog.read',
       'report.generate',
+      'ask.use',
     ],
   },
 
@@ -135,6 +137,7 @@ export const ROLE_DEFINITIONS: Record<RoleKey, RoleDefinition> = {
       'quality.manage',
       'compliance.read',
       'report.generate',
+      'ask.use',
     ],
   },
 
@@ -157,6 +160,7 @@ export const ROLE_DEFINITIONS: Record<RoleKey, RoleDefinition> = {
       'trust.read',
       'compliance.read',
       'report.generate',
+      'ask.use',
     ],
   },
 
@@ -177,6 +181,7 @@ export const ROLE_DEFINITIONS: Record<RoleKey, RoleDefinition> = {
       'audit.read',
       'auditlog.read',
       'report.generate',
+      'ask.use',
     ],
   },
 
