@@ -117,3 +117,33 @@ export {
   integrationRunById,
 } from './integrations';
 export type { CommitImportArgs, CommitImportResult } from './integrations';
+
+export {
+  createApiKey,
+  revokeApiKey,
+  listApiKeys,
+  authenticateApiKey,
+  createWebhookEndpoint,
+  updateWebhookEndpoint,
+  deleteWebhookEndpoint,
+  rollWebhookSecret,
+  listWebhookEndpoints,
+  listWebhookDeliveries,
+  webhookDeliveryById,
+  retryWebhookDelivery,
+  sendTestWebhook,
+  dispatchDueWebhookDeliveries,
+} from './access';
+export type {
+  CreateApiKeyArgs,
+  CreateApiKeyResult,
+  ApiKeyView,
+  AuthenticatedApiKey,
+  CreateWebhookEndpointArgs,
+  UpdateWebhookEndpointArgs,
+  WebhookEndpointView,
+  WebhookDeliveryView,
+  DispatchWebhooksDeps,
+  DispatchWebhooksResult,
+  WebhookFetch,
+} from './access';

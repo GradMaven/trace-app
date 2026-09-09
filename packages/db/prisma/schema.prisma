@@ -132,6 +132,9 @@ model Organization {
   procurementScenarios ProcurementScenario[]
   integrations        Integration[]
   integrationRuns     IntegrationRun[]
+  apiKeys             ApiKey[]
+  webhookEndpoints    WebhookEndpoint[]
+  webhookDeliveries   WebhookDelivery[]
 
   @@map("organization")
 }
@@ -199,6 +202,9 @@ model Role {
   name           String
   description    String   @default("")
   isPlatform     Boolean  @default(false) @map("is_platform")
+  /// True for the roles the product ships with (see @trace/shared ROLE_KEYS).
+  /// Custom roles created via `role.manage` are false and may be edited/deleted.
+  isSystem       Boolean  @default(false) @map("is_system")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -1722,4 +1728,106 @@ model IntegrationRun {
 
   @@index([organizationId, startedAt])
   @@map("integration_run")
+}
+
+// ===========================================================================
+// Enterprise access (Phase 13) — API keys, outbound webhooks
+// ===========================================================================
+
+/// A per-organization API key for programmatic access. Only `tokenPrefix`
+/// (public id) and `hashedSecret` (sha256) are stored; the full `trk_` token is
+/// shown once at creation. `scopes` are coarse tokens (see @trace/domain
+/// API_KEY_SCOPES) expanded to a permission set on every request.
+model ApiKey {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  name           String
+  tokenPrefix    String    @unique @map("token_prefix")
+  hashedSecret   String    @unique @map("hashed_secret")
+  last4          String    @map("last4")
+  scopes         String[]
+  createdByUserId String   @map("created_by_user_id") @db.Uuid
+  lastUsedAt     DateTime? @map("last_used_at") @db.Timestamptz(6)
+  expiresAt      DateTime? @map("expires_at") @db.Timestamptz(6)
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedByUserId String?  @map("revoked_by_user_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@map("api_key")
+}
+
+/// A subscriber URL for outbound webhooks. `secret` signs every delivery
+/// (HMAC-SHA256, `x-trace-signature`). `events` is the subscribed subset of
+/// @trace/domain SUBSCRIBABLE_WEBHOOK_EVENTS. `consecutiveFailures` drives the
+/// auto-disable after a sustained outage.
+model WebhookEndpoint {
+  id             String                @id @default(uuid()) @db.Uuid
+  organizationId String                @map("organization_id") @db.Uuid
+  url            String
+  description    String                @default("")
+  events         String[]
+  secret         String
+  status         WebhookEndpointStatus @default(active)
+  createdByUserId String               @map("created_by_user_id") @db.Uuid
+  lastSuccessAt  DateTime?             @map("last_success_at") @db.Timestamptz(6)
+  lastFailureAt  DateTime?             @map("last_failure_at") @db.Timestamptz(6)
+  consecutiveFailures Int              @default(0) @map("consecutive_failures")
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deliveries   WebhookDelivery[]
+
+  @@index([organizationId, status])
+  @@map("webhook_endpoint")
+}
+
+/// One queued/attempted delivery of one event to one endpoint. Created in the
+/// same transaction as the audit entry that triggered it; dispatched (and
+/// retried with backoff) by the worker. `payload` is the signed body.
+model WebhookDelivery {
+  id             String                @id @default(uuid()) @db.Uuid
+  organizationId String                @map("organization_id") @db.Uuid
+  endpointId     String                @map("endpoint_id") @db.Uuid
+  event          String
+  payload        Json
+  status         WebhookDeliveryStatus @default(pending)
+  attempts       Int                   @default(0)
+  maxAttempts    Int                   @default(6) @map("max_attempts")
+  nextAttemptAt  DateTime?             @map("next_attempt_at") @db.Timestamptz(6)
+  lastAttemptAt  DateTime?             @map("last_attempt_at") @db.Timestamptz(6)
+  responseStatus Int?                  @map("response_status")
+  responseBody   String?               @map("response_body")
+  error          String?
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  endpoint     WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([status, nextAttemptAt])
+  @@map("webhook_delivery")
+}
+
+enum WebhookEndpointStatus {
+  active
+  paused
+  disabled
+
+  @@map("webhook_endpoint_status")
+}
+
+enum WebhookDeliveryStatus {
+  pending
+  delivering
+  succeeded
+  failed
+  dead
+
+  @@map("webhook_delivery_status")
 }

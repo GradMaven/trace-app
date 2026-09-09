@@ -4,6 +4,7 @@ import { pino } from 'pino';
 import { loadEnv } from '@trace/config';
 import { QUEUES, type DocumentProcessingJob, type NotificationJob } from './queues';
 import { processDocument } from './processors/document-processing';
+import { runWebhookDispatchPass } from './processors/webhook-dispatch';
 
 const env = loadEnv();
 const log = pino({ level: env.LOG_LEVEL, name: 'worker' });
@@ -13,7 +14,9 @@ const connection = new IORedis(env.REDIS_URL, {
   maxRetriesPerRequest: null,
   lazyConnect: true,
 });
-connection.on('error', (err) => log.warn({ err: err.message }, 'redis connection error (is Redis running?)'));
+connection.on('error', (err) =>
+  log.warn({ err: err.message }, 'redis connection error (is Redis running?)'),
+);
 
 /** Producer handle other processes import via a shared package later. */
 export const notificationsQueue = new Queue<NotificationJob>(QUEUES.notifications, { connection });
@@ -33,10 +36,9 @@ notificationsWorker.on('failed', (job, err) =>
 );
 notificationsWorker.on('error', (err) => log.warn({ err: err.message }, 'worker error'));
 
-export const documentProcessingQueue = new Queue<DocumentProcessingJob>(
-  QUEUES.documentProcessing,
-  { connection },
-);
+export const documentProcessingQueue = new Queue<DocumentProcessingJob>(QUEUES.documentProcessing, {
+  connection,
+});
 
 const documentWorker = new Worker<DocumentProcessingJob>(
   QUEUES.documentProcessing,
@@ -53,8 +55,33 @@ documentWorker.on('failed', (job, err) =>
 );
 documentWorker.on('error', (err) => log.warn({ err: err.message }, 'document worker error'));
 
+// Outbound webhooks (Phase 13). A DB-backed sweep, not a Redis queue: deliveries
+// are rows written in the same transaction as the audit entry that triggered
+// them, so they survive a Redis outage. One pass every WEBHOOK_DISPATCH_INTERVAL.
+const WEBHOOK_DISPATCH_INTERVAL_MS = 15_000;
+let webhookPassRunning = false;
+const webhookTimer = setInterval(() => {
+  if (webhookPassRunning) return;
+  webhookPassRunning = true;
+  runWebhookDispatchPass()
+    .then((r) => {
+      if (r.attempted > 0) log.info(r, 'webhook dispatch pass');
+    })
+    .catch((err) =>
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'webhook dispatch pass failed',
+      ),
+    )
+    .finally(() => {
+      webhookPassRunning = false;
+    });
+}, WEBHOOK_DISPATCH_INTERVAL_MS);
+webhookTimer.unref();
+
 async function shutdown(signal: string): Promise<void> {
   log.info({ signal }, 'shutting down worker');
+  clearInterval(webhookTimer);
   await Promise.all([notificationsWorker.close(), documentWorker.close()]);
   await Promise.all([notificationsQueue.close(), documentProcessingQueue.close()]);
   await connection.quit().catch(() => undefined);

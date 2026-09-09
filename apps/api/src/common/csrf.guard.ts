@@ -2,6 +2,7 @@ import { Injectable, type CanActivate, type ExecutionContext } from '@nestjs/com
 import { Reflector } from '@nestjs/core';
 import { AppError } from '@trace/shared';
 import type { RequestWithContext } from './request-context';
+import type { AuthenticatedActor } from './auth.guard';
 import { PUBLIC_KEY } from './decorators';
 
 export const CSRF_COOKIE = 'trace_csrf';
@@ -19,7 +20,9 @@ export class CsrfGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const req = context.switchToHttp().getRequest<RequestWithContext>();
+    const req = context
+      .switchToHttp()
+      .getRequest<RequestWithContext & { actor?: AuthenticatedActor }>();
     if (SAFE_METHODS.has(req.method)) return true;
 
     const isPublic = this.reflector.getAllAndOverride<boolean>(PUBLIC_KEY, [
@@ -27,6 +30,10 @@ export class CsrfGuard implements CanActivate {
       context.getClass(),
     ]);
     if (isPublic) return true;
+
+    // API-key requests carry no cookie, so CSRF (a cookie-confusion defense)
+    // does not apply — they authenticate with a bearer credential instead.
+    if (req.actor?.viaApiKeyId) return true;
 
     const cookie = (req.cookies as Record<string, string> | undefined)?.[CSRF_COOKIE];
     const header = req.headers[CSRF_HEADER];

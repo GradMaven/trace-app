@@ -20,6 +20,8 @@ export const PERMISSIONS = {
   'member.remove': 'Remove members from the organization',
   'role.read': 'View roles and their permissions',
   'role.manage': 'Create, edit, and assign roles',
+  'apikey.manage': 'Create and revoke API keys for programmatic access',
+  'webhook.manage': 'Configure outbound webhook endpoints and inspect deliveries',
 
   // Suppliers
   'supplier.read': 'View suppliers',

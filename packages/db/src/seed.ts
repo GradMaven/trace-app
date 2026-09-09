@@ -18,7 +18,9 @@ import { QUESTIONNAIRE_VERSION } from '@trace/domain';
 import { createStorageService, documentStorageKey } from '@trace/storage';
 import type { Prisma } from './index';
 import {
+  createApiKey,
   createAudit,
+  createWebhookEndpoint,
   disconnectPrisma,
   ensurePermissionCatalog,
   ensurePlatformRole,
@@ -192,6 +194,11 @@ async function main(): Promise<void> {
   await seedAiExtraction();
   console.warn('[seed] Demo document processed through the extraction pipeline (stub provider).');
 
+  await seedAccess();
+  console.warn(
+    '[seed] Demo API key + webhook endpoint created (webhooks fan out from later scans).',
+  );
+
   await seedTrust();
   console.warn('[seed] Trust Scores computed and a data-quality scan run for FY2025.');
 
@@ -206,6 +213,95 @@ async function main(): Promise<void> {
   console.warn(
     '[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).',
   );
+}
+
+async function seedAccess(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const adminId = DEMO.users.admin.id;
+  const analystId = DEMO.users.analyst.id;
+
+  await withOrgContext(orgId, async (db) => {
+    // A read-only API key for a CI export job. The token is printed once.
+    const existingKey = await db.apiKey.findFirst({
+      where: { organizationId: orgId, name: 'Reporting export — read only' },
+    });
+    if (!existingKey) {
+      const key = await createApiKey(db, {
+        organizationId: orgId,
+        name: 'Reporting export — read only',
+        scopes: ['read:all', 'ask:use'],
+        actorUserId: adminId,
+        requestId: 'seed',
+      });
+      console.warn(`[seed]   → demo API key: ${key.token}`);
+    }
+
+    // One outbound webhook endpoint. It is subscribed to the events the later
+    // trust / compliance / audit seed steps emit, so real signed deliveries are
+    // queued (pending until a worker with network access dispatches them).
+    const existingHook = await db.webhookEndpoint.findFirst({ where: { organizationId: orgId } });
+    if (!existingHook) {
+      await createWebhookEndpoint(db, {
+        organizationId: orgId,
+        url: 'https://hooks.nordwerk.example/trace',
+        description: 'NordWerk data platform — ingest TRACE events',
+        events: [
+          'trust.scan_completed',
+          'compliance.evaluated',
+          'audit.simulation_completed',
+          'evidence.verified',
+        ],
+        actorUserId: adminId,
+        requestId: 'seed',
+      });
+    }
+
+    // A custom role on top of the eight built-ins.
+    const existingRole = await db.role.findFirst({
+      where: { organizationId: orgId, key: 'data_steward' },
+    });
+    if (!existingRole) {
+      const perms = [
+        'activity.read',
+        'evidence.read',
+        'evidence.update',
+        'trust.read',
+        'quality.manage',
+        'compliance.read',
+      ];
+      const role = await db.role.create({
+        data: {
+          organizationId: orgId,
+          key: 'data_steward',
+          name: 'Data Steward',
+          description:
+            'Curates evidence quality and data-quality triage without full analyst rights.',
+          isSystem: false,
+          permissions: { create: perms.map((permissionKey) => ({ permissionKey })) },
+        },
+      });
+      await writeAuditLog(db, {
+        organizationId: orgId,
+        actorId: adminId,
+        action: 'role.created',
+        resourceType: 'role',
+        resourceId: role.id,
+        before: null,
+        after: { key: role.key, name: role.name, permissions: perms },
+        requestId: 'seed',
+      });
+      const analystMembership = await db.membership.findFirst({
+        where: { organizationId: orgId, userId: analystId },
+      });
+      if (analystMembership) {
+        await db.membershipRole.upsert({
+          where: { membershipId_roleId: { membershipId: analystMembership.id, roleId: role.id } },
+          create: { membershipId: analystMembership.id, roleId: role.id },
+          update: {},
+        });
+      }
+    }
+  });
 }
 
 async function seedProcurement(): Promise<void> {

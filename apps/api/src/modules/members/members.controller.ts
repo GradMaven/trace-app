@@ -1,15 +1,16 @@
-import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Put } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { getContext } from '@trace/db';
 import { CurrentActor, RequirePermission } from '../../common/decorators';
 import { ZodPipe } from '../../common/zod.pipe';
 import type { AuthenticatedActor } from '../../common/auth.guard';
+import { MembersService, type InvitationView, type MemberView } from './members.service';
 import {
-  MembersService,
-  type InvitationView,
-  type MemberView,
-} from './members.service';
-import { inviteMemberSchema, type InviteMemberInput } from './members.dto';
+  inviteMemberSchema,
+  setMemberRolesSchema,
+  type InviteMemberInput,
+  type SetMemberRolesInput,
+} from './members.dto';
 
 @ApiTags('members')
 @Controller('members')
@@ -46,11 +47,27 @@ export class MembersController {
   @RequirePermission('member.invite')
   @HttpCode(204)
   @ApiOperation({ summary: 'Revoke a pending invitation.' })
-  async revoke(
-    @Param('id') id: string,
+  async revoke(@Param('id') id: string, @CurrentActor() actor: AuthenticatedActor): Promise<void> {
+    const requestId = getContext()?.requestId ?? 'unknown';
+    await this.members.revokeInvitation(actor.organizationId!, actor.userId, id, requestId);
+  }
+
+  @Put(':userId/roles')
+  @RequirePermission('role.manage')
+  @HttpCode(204)
+  @ApiOperation({ summary: "Replace a member's role assignments (built-in or custom role keys)." })
+  async setRoles(
+    @Param('userId') userId: string,
+    @Body(new ZodPipe(setMemberRolesSchema)) body: SetMemberRolesInput,
     @CurrentActor() actor: AuthenticatedActor,
   ): Promise<void> {
     const requestId = getContext()?.requestId ?? 'unknown';
-    await this.members.revokeInvitation(actor.organizationId!, actor.userId, id, requestId);
+    await this.members.setRoles(
+      actor.organizationId!,
+      actor.userId,
+      userId,
+      body.roleKeys,
+      requestId,
+    );
   }
 }

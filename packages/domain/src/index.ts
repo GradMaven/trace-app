@@ -17,3 +17,7 @@ export * from './integrations/csv';
 export * from './integrations/adapter';
 export * from './integrations/csv-activity';
 export * from './integrations/registry';
+export * from './access/scopes';
+export * from './access/api-key';
+export * from './access/webhook';
+export * from './access/role';

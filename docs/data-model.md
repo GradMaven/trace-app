@@ -574,6 +574,58 @@ integration_run(id, organization_id, integration_id NULL, kind, status, file_nam
   `0022_integrations_rls`. `integration_run` is append-only in practice (created `running`,
   updated once to a terminal status); it is not version-chained.
 
+### Enterprise access (Phase 13)
+
+```
+role(… , is_system boolean default false)   -- true for the 8 shipped roles; custom roles are false
+
+api_key(id, organization_id, name, token_prefix UNIQUE, hashed_secret UNIQUE, last4,
+        scopes text[], created_by_user_id, last_used_at NULL, expires_at NULL,
+        revoked_at NULL, revoked_by_user_id NULL, created_at, updated_at)
+
+webhook_endpoint(id, organization_id, url, description, events text[], secret,
+                 status, created_by_user_id, last_success_at NULL, last_failure_at NULL,
+                 consecutive_failures int, created_at, updated_at)
+
+webhook_delivery(id, organization_id, endpoint_id, event, payload jsonb, status,
+                 attempts int, max_attempts int, next_attempt_at NULL, last_attempt_at NULL,
+                 response_status NULL, response_body NULL, error NULL, created_at, updated_at)
+```
+
+- **`@trace/domain/access`** (pure): API-key format `trk_<keyId>_<secret>` —
+  `generateApiKey` / `parseApiKey` / `hashApiKeySecret` (sha256) /
+  `apiKeySecretMatches` (constant-time) / `apiKeyState`. `API_KEY_SCOPES` are
+  coarse tokens; `expandApiKeyScopes` turns them into a `Permission[]` that is
+  always a subset of the catalog and **never** includes
+  `API_KEY_FORBIDDEN_PERMISSIONS` (`apikey.manage`, `webhook.manage`,
+  `role.manage`, `member.*`, `organization.update`, `platform.admin`).
+  `webhook.ts`: `WEBHOOK_EVENTS` catalog, `webhookEventForAuditAction` (maps ~13
+  audit actions → events), `signWebhookBody` / `verifyWebhookSignature`
+  (`x-trace-signature: t=<ts>,v1=<hmac-sha256 of "ts.body">`, 5-min tolerance),
+  `webhookNextAttemptAt` (0 / 30s / 2m / 10m / 30m / 2h), `WEBHOOK_MAX_ATTEMPTS = 6`.
+  `role.ts`: `validateCustomRole`.
+- **`@trace/db/access.ts`**: `createApiKey` (stores only `token_prefix` +
+  `hashed_secret`; returns the token once, audit `apikey.created`),
+  `revokeApiKey`, `listApiKeys` (never returns a secret), `authenticateApiKey`
+  (global lookup by `token_prefix`, constant-time secret check, state check,
+  `last_used_at` bumped at most once a minute). `createWebhookEndpoint` /
+  `updateWebhookEndpoint` / `deleteWebhookEndpoint` / `rollWebhookSecret` /
+  `listWebhookEndpoints`; `listWebhookDeliveries` / `webhookDeliveryById` /
+  `retryWebhookDelivery` / `sendTestWebhook` (a `ping`). `dispatchDueWebhookDeliveries(prisma, { fetch })`
+  is the platform sweep: for every `pending` delivery with `next_attempt_at <=
+  now`, sign + POST, then `succeeded` / re-`pending` with backoff / `dead` (at
+  `max_attempts`); an endpoint with 15 consecutive failures auto-`disabled`.
+- **`writeAuditLog` fan-out**: after the hash-chain append, if
+  `webhookEventForAuditAction(action)` is non-null and the org has `active`
+  endpoints subscribed to it, one `webhook_delivery` per endpoint is created **in
+  the same transaction** (`payload` = the signed envelope from
+  `buildWebhookEventPayload`).
+- RLS: `webhook_endpoint` is `FORCE` `current_org()` (migration
+  `0024_access_rls`). `api_key` and `webhook_delivery` are **not** RLS'd — the
+  first is the credential that establishes org context (like `session`), the
+  second is a cross-tenant operational log swept by the dispatcher (like
+  `audit_log`); both carry `organization_id` and every read path filters on it.
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

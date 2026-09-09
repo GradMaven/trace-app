@@ -1,7 +1,7 @@
 import { Injectable, type CanActivate, type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AppError, type Permission } from '@trace/shared';
-import { getPrisma } from '@trace/db';
+import { authenticateApiKey, getPrisma } from '@trace/db';
 import { resolvePermissions } from '@trace/domain';
 import type { RequestWithContext } from './request-context';
 import { hashToken } from './request-context';
@@ -16,11 +16,14 @@ export interface AuthenticatedActor {
   membershipId: string | null;
   /** Set when the active membership is a supplier-portal user scoped to one supplier. */
   supplierId: string | null;
+  /** Set when the request authenticated with an API key rather than a session. */
+  viaApiKeyId: string | null;
   permissions: Permission[];
 }
 
 export const SESSION_COOKIE = 'trace_session';
 const ORG_HEADER = 'x-organization-id';
+const API_KEY_HEADER = 'x-api-key';
 
 /**
  * Resolves the session cookie into an actor, determines the active organization,
@@ -38,7 +41,9 @@ export class AuthGuard implements CanActivate {
       context.getClass(),
     ]);
 
-    const req = context.switchToHttp().getRequest<RequestWithContext & { actor?: AuthenticatedActor }>();
+    const req = context
+      .switchToHttp()
+      .getRequest<RequestWithContext & { actor?: AuthenticatedActor }>();
     const actor = await this.resolveActor(req);
 
     if (actor) {
@@ -56,7 +61,7 @@ export class AuthGuard implements CanActivate {
 
   private async resolveActor(req: RequestWithContext): Promise<AuthenticatedActor | undefined> {
     const raw = (req.cookies as Record<string, string> | undefined)?.[SESSION_COOKIE];
-    if (!raw) return undefined;
+    if (!raw) return this.resolveApiKeyActor(req);
 
     const prisma = getPrisma();
     const session = await prisma.session.findUnique({
@@ -68,7 +73,10 @@ export class AuthGuard implements CanActivate {
     }
 
     const requestedOrg = firstHeader(req.headers[ORG_HEADER]);
-    const activeOrgId = await this.pickOrganization(session.userId, requestedOrg ?? session.organizationId);
+    const activeOrgId = await this.pickOrganization(
+      session.userId,
+      requestedOrg ?? session.organizationId,
+    );
 
     let membershipId: string | null = null;
     let supplierId: string | null = null;
@@ -98,7 +106,40 @@ export class AuthGuard implements CanActivate {
       organizationId: membershipId ? activeOrgId : null,
       membershipId,
       supplierId: membershipId ? supplierId : null,
+      viaApiKeyId: null,
       permissions,
+    };
+  }
+
+  /**
+   * API-key authentication (Phase 13). A key resolves to exactly one
+   * organization and a scoped, capped permission set (never administrative — see
+   * @trace/domain API_KEY_FORBIDDEN_PERMISSIONS). No session, no membership; the
+   * responsible user is the key's creator, recorded for the audit trail.
+   */
+  private async resolveApiKeyActor(
+    req: RequestWithContext,
+  ): Promise<AuthenticatedActor | undefined> {
+    const header = firstHeader(req.headers[API_KEY_HEADER]);
+    const bearer = firstHeader(req.headers.authorization);
+    const presented =
+      header ?? (bearer?.toLowerCase().startsWith('bearer ') ? bearer.slice(7).trim() : undefined);
+    if (!presented) return undefined;
+
+    const key = await authenticateApiKey(getPrisma(), presented);
+    if (!key) throw AppError.unauthenticated('auth.invalid_api_key', 'Invalid or expired API key.');
+
+    const user = await getPrisma().user.findUnique({ where: { id: key.createdByUserId } });
+    return {
+      userId: key.createdByUserId,
+      email: user?.email ?? 'api-key@trace.internal',
+      name: user ? `${user.name} (API key: ${key.name})` : `API key: ${key.name}`,
+      sessionId: `apikey:${key.apiKeyId}`,
+      organizationId: key.organizationId,
+      membershipId: null,
+      supplierId: null,
+      viaApiKeyId: key.apiKeyId,
+      permissions: key.permissions,
     };
   }
 

@@ -29,6 +29,28 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 13a — Enterprise access (landed).** On top of Phases 1–12: programmatic access and
+event fan-out. **New `@trace/domain/access`** (pure) — API-key format + SHA-256 hashing +
+constant-time compare; coarse **scopes** (`read:all`, `activity:write`, …) that expand to a
+permission set and can never include an admin or self-propagating permission; a webhook
+**event catalog**, an audit-action → event map, HMAC `t=,v1=` signing, and a capped
+exponential backoff schedule; `validateCustomRole`. `@trace/db` adds `access.ts`
+(`createApiKey` / `authenticateApiKey` / …, webhook endpoint CRUD, and
+`dispatchDueWebhookDeliveries(prisma, { fetch })` — sign, POST, record, reschedule, `dead`
+after six tries, auto-disable an endpoint after fifteen straight failures) and, crucially,
+`writeAuditLog` now **fans out**: a webhook-mapped mutation queues one `webhook_delivery`
+per subscribed endpoint _in the same transaction_, so a delivery is never queued for a
+change that rolls back. New `api_key` / `webhook_endpoint` / `webhook_delivery` tables and a
+`role.is_system` flag; the API `AuthGuard` gains an `x-api-key` / `Bearer` path (CSRF-exempt,
+capped permissions), plus `/api-keys` and `/webhooks` modules, custom-role CRUD, and
+`PUT /members/:id/roles`. The worker dispatches due deliveries every 15s. Web adds Settings →
+API Keys, Webhooks (with a delivery inspector), a custom-role editor, and an inline member
+role editor. Builds, typechecks, lints and unit tests are green; the Postgres-dependent
+integration suites (RLS / tenant isolation, supplier, evidence, carbon, AI extraction, trust,
+compliance, audit, command center, ask, procurement, integrations, access) run in CI. SSO,
+MFA, SCIM, export, retention and billing remain open under Phase 13 — see
+[docs/roadmap.md](docs/roadmap.md).
+
 **Phase 12 — Enterprise integrations (landed).** On top of Phases 1–11: bulk activity data
 in, with per-row validation before anything is written. **New `@trace/domain/integrations`**
 (pure) — a dependency-free CSV/TSV parser (`parseDelimited`), an `IntegrationAdapter`

@@ -32,6 +32,8 @@ import { CommandCenterModule } from './modules/command-center/command-center.mod
 import { AskModule } from './modules/ask/ask.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
+import { ApiKeysModule } from './modules/api-keys/api-keys.module';
+import { WebhooksModule } from './modules/webhooks/webhooks.module';
 
 @Module({
   imports: [
@@ -61,6 +63,8 @@ import { IntegrationsModule } from './modules/integrations/integrations.module';
     AskModule,
     ProcurementModule,
     IntegrationsModule,
+    ApiKeysModule,
+    WebhooksModule,
   ],
   providers: [
     CatalogBootstrap,

@@ -114,18 +114,12 @@ export function MembersClient({
               <th>Email</th>
               <th>Roles</th>
               <th>Status</th>
+              <th />
             </tr>
           </thead>
           <tbody>
             {members.map((m) => (
-              <tr key={m.userId}>
-                <td>{m.name}</td>
-                <td className="muted">{m.email}</td>
-                <td>{m.roleKeys.join(', ')}</td>
-                <td>
-                  <span className="tag">{m.status}</span>
-                </td>
-              </tr>
+              <MemberRow key={m.userId} member={m} roles={roles} onSaved={() => router.refresh()} />
             ))}
           </tbody>
         </table>
@@ -161,5 +155,96 @@ export function MembersClient({
         </section>
       )}
     </div>
+  );
+}
+
+function MemberRow({
+  member,
+  roles,
+  onSaved,
+}: {
+  member: MemberView;
+  roles: Array<{ key: string; name: string }>;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [sel, setSel] = useState<string[]>(member.roleKeys);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save() {
+    setBusy(true);
+    setErr(null);
+    const res = await clientFetch(`/members/${member.userId}/roles`, {
+      method: 'PUT',
+      body: JSON.stringify({ roleKeys: sel }),
+    });
+    setBusy(false);
+    if (res.ok) {
+      setEditing(false);
+      onSaved();
+    } else {
+      setErr(res.error?.message ?? 'Could not update roles.');
+    }
+  }
+
+  return (
+    <tr>
+      <td>{member.name}</td>
+      <td className="muted">{member.email}</td>
+      <td>
+        {editing ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {roles.map((r) => {
+              const on = sel.includes(r.key);
+              return (
+                <button
+                  type="button"
+                  key={r.key}
+                  className="tag"
+                  onClick={() => setSel((s) => (on ? s.filter((k) => k !== r.key) : [...s, r.key]))}
+                  style={{
+                    cursor: 'pointer',
+                    background: on ? 'var(--accent)' : 'transparent',
+                    color: on ? 'var(--accent-contrast)' : 'var(--text-secondary)',
+                    borderColor: on ? 'var(--accent)' : 'var(--border)',
+                  }}
+                >
+                  {r.key}
+                </button>
+              );
+            })}
+            {err && <span style={{ color: 'var(--critical)', fontSize: 12 }}>{err}</span>}
+          </div>
+        ) : (
+          member.roleKeys.join(', ') || '—'
+        )}
+      </td>
+      <td>
+        <span className="tag">{member.status}</span>
+      </td>
+      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+        {editing ? (
+          <>
+            <button className="btn" disabled={busy || sel.length === 0} onClick={() => void save()}>
+              {busy ? 'Saving…' : 'Save'}
+            </button>{' '}
+            <button
+              className="btn"
+              onClick={() => {
+                setSel(member.roleKeys);
+                setEditing(false);
+              }}
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button className="btn" onClick={() => setEditing(true)}>
+            Edit roles
+          </button>
+        )}
+      </td>
+    </tr>
   );
 }

@@ -42,6 +42,7 @@ export async function ensurePlatformRole(db: TenantDb): Promise<void> {
         name: def.name,
         description: def.description,
         isPlatform: true,
+        isSystem: true,
       },
     }));
   await syncRolePermissions(db, role.id, def.permissions);
@@ -110,6 +111,7 @@ export async function provisionOrganization(
         name: def.name,
         description: def.description,
         isPlatform: false,
+        isSystem: true,
       },
     });
     roleIdsByKey[key] = role.id;

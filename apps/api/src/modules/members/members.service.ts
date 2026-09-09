@@ -91,7 +91,10 @@ export class MembersService {
         where: { organizationId, email: input.email, status: 'pending' },
       });
       if (existingPending) {
-        throw AppError.conflict('members.invitation_pending', 'An invitation is already pending for that address.');
+        throw AppError.conflict(
+          'members.invitation_pending',
+          'An invitation is already pending for that address.',
+        );
       }
 
       const invitation = await db.invitation.create({
@@ -134,6 +137,76 @@ export class MembersService {
     });
   }
 
+  async setRoles(
+    organizationId: string,
+    actorUserId: string,
+    targetUserId: string,
+    roleKeys: string[],
+    requestId: string,
+  ): Promise<void> {
+    await withOrgContext(organizationId, async (db) => {
+      const membership = await db.membership.findFirst({
+        where: { organizationId, userId: targetUserId },
+        include: { roles: { include: { role: { select: { id: true, key: true } } } } },
+      });
+      if (!membership) throw AppError.notFound('members.not_found', 'That person is not a member.');
+      if (membership.supplierId) {
+        throw AppError.unprocessable(
+          'members.supplier_membership',
+          'Supplier-portal members are scoped by the portal, not by role assignment.',
+        );
+      }
+
+      const wanted = [...new Set(roleKeys)];
+      const roles = await db.role.findMany({
+        where: { organizationId, key: { in: wanted } },
+        select: { id: true, key: true },
+      });
+      const known = new Set(roles.map((r) => r.key));
+      const unknown = wanted.filter((k) => !known.has(k));
+      if (unknown.length > 0) {
+        throw AppError.unprocessable(
+          'members.unknown_role',
+          `Unknown role(s) for this organization: ${unknown.join(', ')}.`,
+        );
+      }
+
+      const had = membership.roles.map((r) => r.role.key);
+      const losingAdmin =
+        had.includes('organization_admin') && !wanted.includes('organization_admin');
+      if (losingAdmin) {
+        const admins = await db.membership.count({
+          where: {
+            organizationId,
+            status: 'active',
+            roles: { some: { role: { key: 'organization_admin' } } },
+          },
+        });
+        if (admins <= 1) {
+          throw AppError.conflict(
+            'members.last_admin',
+            'This is the last Organization Admin — assign the role to someone else first.',
+          );
+        }
+      }
+
+      await db.membershipRole.deleteMany({ where: { membershipId: membership.id } });
+      await db.membershipRole.createMany({
+        data: roles.map((r) => ({ membershipId: membership.id, roleId: r.id })),
+      });
+      await writeAuditLog(db, {
+        organizationId,
+        actorId: actorUserId,
+        action: 'member.roles_updated',
+        resourceType: 'membership',
+        resourceId: membership.id,
+        before: { roleKeys: had },
+        after: { roleKeys: wanted },
+        requestId,
+      });
+    });
+  }
+
   async revokeInvitation(
     organizationId: string,
     actorUserId: string,
@@ -146,7 +219,10 @@ export class MembersService {
       });
       if (!invitation) throw AppError.notFound('invitation.not_found', 'Invitation not found.');
       if (invitation.status !== 'pending') {
-        throw AppError.conflict('invitation.not_pending', 'Only a pending invitation can be revoked.');
+        throw AppError.conflict(
+          'invitation.not_pending',
+          'Only a pending invitation can be revoked.',
+        );
       }
       await db.invitation.update({ where: { id: invitation.id }, data: { status: 'revoked' } });
       await writeAuditLog(db, {
