@@ -29,6 +29,24 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 13d — Audit-log streaming + monitoring (landed).** On top of Phase 13c: push every
+matching activity-log entry to a per-organization SIEM stream, plus operational monitoring.
+**`@trace/domain/access`** gains (pure) `audit-stream.ts` (a stream filter + matcher, the
+signed-batch envelope, a retry schedule), `prometheus.ts` (a Prometheus 0.0.4 text
+serialiser), and `health.ts` (a health roll-up + heartbeat-age classifier). `@trace/db` adds
+`audit-stream.ts` — stream CRUD plus `dispatchOrgAuditStreams`, which cursor-tails
+`audit_log` per stream, filters, and POSTs a signed batch (the same HMAC scheme as webhooks)
+with capped-backoff retry and auto-pause — and `ops.ts` (`orgStats`, `platformMetrics`). New
+`audit_stream` / `audit_stream_delivery` / `component_heartbeat` tables. The API adds
+`/settings/audit-streams/*` (`audit_stream.manage`), `GET /ops/stats` (`ops.read`), a
+`METRICS_TOKEN`-gated `GET /metrics` (Prometheus text), and `GET /health/detailed`
+(DB round-trip + worker heartbeat + storage driver, rolled up to healthy/degraded/unhealthy).
+The worker runs a 20-second stream dispatch sweep and a 30-second heartbeat. Web adds
+Settings → Audit Streams and Ops & Health. Builds, typechecks, lints and unit tests are
+green; the Postgres-dependent integration suites (…, audit-stream) run in CI. SSO, SCIM and
+a real billing provider are the only remaining Phase-13 items — see
+[docs/roadmap.md](docs/roadmap.md).
+
 **Phase 13c — Usage metering & quotas (landed).** On top of Phase 13b: per-organization
 usage counters and plan-quota enforcement (no payment integration). **`@trace/domain/access`**
 gains (pure) `metering.ts` — the metric catalogue (`api_request` / `ai_job` /

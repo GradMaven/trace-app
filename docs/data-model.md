@@ -731,6 +731,64 @@ usage_event(id, organization_id, period text, metric text, quantity int,
   roll-forward open `withOrgContext`. `plan` is the global catalogue, not RLS'd.
   `usage_event` is a Phase-13b retention target (min 30 days).
 
+### Audit-log streaming + monitoring (Phase 13d)
+
+```
+audit_stream(id, organization_id, name, url, secret, filters jsonb, status,
+             cursor text NULL, created_by_user_id, last_delivery_at NULL,
+             last_error NULL, consecutive_failures int, created_at, updated_at)
+
+audit_stream_delivery(id, organization_id, stream_id, from_cursor NULL, to_cursor,
+                      count int, status, attempts int, max_attempts int,
+                      next_attempt_at NULL, last_attempt_at NULL,
+                      response_status NULL, error NULL, created_at, updated_at)
+
+component_heartbeat(component PK, beat_at, meta jsonb)   -- global, no org scope
+```
+
+- **`@trace/domain/access`** (pure): `audit-stream.ts` — `AuditStreamFilter`
+  `{ actionPrefixes?, resourceTypes? }`, `normalizeAuditStreamFilter`
+  (regex-guards each — `/^[a-z][a-z0-9_.]{0,60}$/` / `/^[a-z][a-z0-9_]{0,60}$/`),
+  `matchesAuditStream(filter, {action, resourceType})` (prefixes OR-match,
+  resourceTypes AND-restrict, empty = match all), `buildAuditStreamBatch`
+  (`{ stream:'audit-log', streamId, organizationId, deliveryId, sentAt, count,
+  entries[] }`), `auditStreamNextAttemptAt` (0 / 15s / 1m / 5m / 15m / 1h / 3h /
+  6h), `AUDIT_STREAM_BATCH_SIZE = 200`, `AUDIT_STREAM_MAX_ATTEMPTS = 8`,
+  `AUDIT_STREAM_AUTO_PAUSE_THRESHOLD = 20`. `prometheus.ts` — `renderPrometheus`
+  (one `# HELP`/`# TYPE` per name, escaped label values, non-finite → 0) +
+  `PROMETHEUS_CONTENT_TYPE`. `health.ts` — `rollUpHealth` (down → unhealthy;
+  degraded → degraded; else healthy), `buildHealthReport`, `heartbeatStatus`
+  (`up` ≤ 120s, `degraded` ≤ 600s, else `down`).
+- **`@trace/db/audit-stream.ts`**: `createAuditStream` (https URL, initial
+  `cursor` = current `audit_log` head so history is **not** back-filled; audit
+  `audit_stream.created`), `updateAuditStream` (re-activation clears the failure
+  counter), `deleteAuditStream`, `rotateAuditStreamSecret`, `listAuditStreams`
+  (no secret), `listAuditStreamDeliveries`, `sendTestAuditStream` (a `pending`
+  delivery with `from_cursor = '__test__'`). `dispatchOrgAuditStreams(db, {fetch,
+  now?, batchSize?})` — for each `active` stream: (1) if a `pending`/`failed`
+  delivery is due, re-read its window and re-POST; (2) else read the next
+  `audit_log` window after `cursor` (order `[createdAt, id]`, `take batchSize`),
+  filter with `matchesAuditStream`; no matches → advance `cursor`, no delivery
+  row; matches → create a delivery + POST a `signWebhookBody`-signed batch
+  (`x-trace-signature`). On 2xx → `cursor = to_cursor` (unless a test), reset
+  failures, `last_delivery_at`. On failure → delivery `failed` w/
+  `next_attempt_at` (or `dead` at `max_attempts`, and the `cursor` is advanced
+  past a dead batch so the stream cannot wedge), `consecutive_failures++`,
+  auto-`paused` at 20. `writeHeartbeat` / `readHeartbeat` on `component_heartbeat`.
+- **`@trace/db/ops.ts`**: `orgStats(db, org, now?)` — per-tenant counts
+  (members / suppliers / datapoints / calculations / evidence / audit entries /
+  open findings / webhook endpoints / audit streams / api-requests &amp; ai-jobs
+  this period) + the worker-heartbeat status. `platformMetrics(prisma, now?)` →
+  `MetricSample[]` — only tables reachable without an org context
+  (`organization`, `user`, `audit_log`, `webhook_delivery`,
+  `audit_stream_delivery`, `subscription` group-by plan) + the worker
+  heartbeat age.
+- RLS: `audit_stream` is `FORCE` `current_org()` (migration
+  `0030_audit_stream_rls`); the worker dispatch enumerates orgs via
+  `activeOrganizationIds` + `withOrgContext`. `audit_stream_delivery` is a
+  system-written log — not RLS'd (like `webhook_delivery`), read paths filter
+  `organization_id`. `component_heartbeat` has no org scope.
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

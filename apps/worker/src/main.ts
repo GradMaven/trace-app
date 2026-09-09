@@ -7,6 +7,7 @@ import { processDocument } from './processors/document-processing';
 import { runWebhookDispatchPass } from './processors/webhook-dispatch';
 import { runRetentionSweep } from './processors/retention';
 import { runUsageRollForward } from './processors/usage';
+import { beatWorkerHeartbeat, runAuditStreamDispatch } from './processors/audit-stream';
 
 const env = loadEnv();
 const log = pino({ level: env.LOG_LEVEL, name: 'worker' });
@@ -121,11 +122,42 @@ const usageTimer = setInterval(() => {
 }, USAGE_ROLLFORWARD_INTERVAL_MS);
 usageTimer.unref();
 
+// Audit-log stream dispatcher (Phase 13d): cursor-tail audit_log per active
+// stream and POST signed batches to the SIEM endpoint. DB-backed, no queue.
+const AUDIT_STREAM_INTERVAL_MS = 20_000;
+let auditStreamRunning = false;
+const auditStreamTimer = setInterval(() => {
+  if (auditStreamRunning) return;
+  auditStreamRunning = true;
+  runAuditStreamDispatch()
+    .then((r) => {
+      if (r.attempted > 0) log.info(r, 'audit-stream dispatch');
+    })
+    .catch((err) =>
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'audit-stream dispatch failed',
+      ),
+    )
+    .finally(() => {
+      auditStreamRunning = false;
+    });
+}, AUDIT_STREAM_INTERVAL_MS);
+auditStreamTimer.unref();
+
+// Liveness beacon for /health/detailed and /metrics.
+const HEARTBEAT_INTERVAL_MS = 30_000;
+void beatWorkerHeartbeat();
+const heartbeatTimer = setInterval(() => void beatWorkerHeartbeat(), HEARTBEAT_INTERVAL_MS);
+heartbeatTimer.unref();
+
 async function shutdown(signal: string): Promise<void> {
   log.info({ signal }, 'shutting down worker');
   clearInterval(webhookTimer);
   clearInterval(retentionTimer);
   clearInterval(usageTimer);
+  clearInterval(auditStreamTimer);
+  clearInterval(heartbeatTimer);
   await Promise.all([notificationsWorker.close(), documentWorker.close()]);
   await Promise.all([notificationsQueue.close(), documentProcessingQueue.close()]);
   await connection.quit().catch(() => undefined);

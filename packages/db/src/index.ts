@@ -24,6 +24,30 @@ export {
   checkQuota,
   listPlans,
 } from './metering';
+
+export {
+  createAuditStream,
+  updateAuditStream,
+  deleteAuditStream,
+  rotateAuditStreamSecret,
+  listAuditStreams,
+  listAuditStreamDeliveries,
+  sendTestAuditStream,
+  dispatchOrgAuditStreams,
+  writeHeartbeat,
+  readHeartbeat,
+} from './audit-stream';
+export type {
+  CreateAuditStreamArgs,
+  UpdateAuditStreamArgs,
+  AuditStreamView,
+  AuditStreamDeliveryView,
+  DispatchAuditStreamsDeps,
+  DispatchAuditStreamsResult,
+} from './audit-stream';
+
+export { orgStats, platformMetrics } from './ops';
+export type { OrgStats } from './ops';
 export type {
   SubscriptionView,
   RecordUsageArgs,

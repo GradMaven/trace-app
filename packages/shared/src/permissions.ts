@@ -26,6 +26,8 @@ export const PERMISSIONS = {
   'data.export': 'Export the organization’s data as a downloadable bundle',
   'usage.read': 'View usage, quotas, and the billing plan',
   'billing.manage': 'Change the organization’s billing plan',
+  'audit_stream.manage': 'Configure audit-log stream endpoints (SIEM delivery)',
+  'ops.read': 'View operational stats and health for the organization',
 
   // Suppliers
   'supplier.read': 'View suppliers',

@@ -145,6 +145,8 @@ model Organization {
   subscription        Subscription?
   usageCounters       UsageCounter[]
   usageEvents         UsageEvent[]
+  auditStreams        AuditStream[]
+  auditStreamDeliveries AuditStreamDelivery[]
 
   @@map("organization")
 }
@@ -2030,4 +2032,92 @@ model UsageEvent {
 
   @@index([organizationId, occurredAt])
   @@map("usage_event")
+}
+
+// ===========================================================================
+// Audit-log streaming + monitoring (Phase 13d)
+// ===========================================================================
+
+/// A per-organization SIEM stream: the worker cursor-tails `audit_log`, batches
+/// entries that match `filters`, and POSTs a signed batch to `url`. `cursor` is
+/// the last audit-log id considered (advanced on a successful delivery even when
+/// nothing matched, so quiet periods still make progress). Starts at the current
+/// log head — history is not back-filled.
+model AuditStream {
+  id                  String            @id @default(uuid()) @db.Uuid
+  organizationId      String            @map("organization_id") @db.Uuid
+  name                String
+  url                 String
+  secret              String
+  filters             Json              @default("{}")
+  status              AuditStreamStatus @default(active)
+  cursor              String?
+  createdByUserId     String            @map("created_by_user_id") @db.Uuid
+  lastDeliveryAt      DateTime?         @map("last_delivery_at") @db.Timestamptz(6)
+  lastError           String?           @map("last_error")
+  consecutiveFailures Int               @default(0) @map("consecutive_failures")
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deliveries   AuditStreamDelivery[]
+
+  @@index([organizationId, status])
+  @@map("audit_stream")
+}
+
+/// One batch delivery attempt for a stream. System-written and swept per-org by
+/// the worker; not RLS'd (like `webhook_delivery`) — carries `organization_id`
+/// and every read path filters on it.
+model AuditStreamDelivery {
+  id             String                    @id @default(uuid()) @db.Uuid
+  organizationId String                    @map("organization_id") @db.Uuid
+  streamId       String                    @map("stream_id") @db.Uuid
+  fromCursor     String?                   @map("from_cursor")
+  toCursor       String                    @map("to_cursor")
+  count          Int                       @default(0)
+  status         AuditStreamDeliveryStatus @default(pending)
+  attempts       Int                       @default(0)
+  maxAttempts    Int                       @default(8) @map("max_attempts")
+  nextAttemptAt  DateTime?                 @map("next_attempt_at") @db.Timestamptz(6)
+  lastAttemptAt  DateTime?                 @map("last_attempt_at") @db.Timestamptz(6)
+  responseStatus Int?                      @map("response_status")
+  error          String?
+  createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  stream       AuditStream  @relation(fields: [streamId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([status, nextAttemptAt])
+  @@map("audit_stream_delivery")
+}
+
+enum AuditStreamStatus {
+  active
+  paused
+  error
+
+  @@map("audit_stream_status")
+}
+
+enum AuditStreamDeliveryStatus {
+  pending
+  delivering
+  succeeded
+  failed
+  dead
+
+  @@map("audit_stream_delivery_status")
+}
+
+/// A liveness beacon written by long-running components (currently `worker`).
+/// Global, not RLS'd — no organization scope.
+model ComponentHeartbeat {
+  component String   @id
+  beatAt    DateTime @map("beat_at") @db.Timestamptz(6)
+  meta      Json     @default("{}")
+
+  @@map("component_heartbeat")
 }

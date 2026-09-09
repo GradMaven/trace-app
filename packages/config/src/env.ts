@@ -34,10 +34,7 @@ export const envSchema = z.object({
   STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
   STORAGE_LOCAL_DIR: z.string().default('.data/documents'),
   // HMAC secret for local signed download URLs (dev). 16+ chars.
-  STORAGE_SIGNING_SECRET: z
-    .string()
-    .min(16)
-    .default('dev-only-storage-signing-secret-change-me'),
+  STORAGE_SIGNING_SECRET: z.string().min(16).default('dev-only-storage-signing-secret-change-me'),
   DOCUMENT_MAX_BYTES: z.coerce.number().int().positive().default(26_214_400), // 25 MiB
   DOCUMENT_ALLOWED_MIME: z
     .string()
@@ -67,6 +64,8 @@ export const envSchema = z.object({
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional().or(z.literal('')).default(''),
   SENTRY_DSN: z.string().optional().or(z.literal('')).default(''),
+  // Bearer token required to scrape GET /metrics. Empty = open (dev only).
+  METRICS_TOKEN: z.string().default(''),
 
   // Email (magic links)
   EMAIL_TRANSPORT: z.enum(['console', 'smtp']).default('console'),
@@ -110,7 +109,9 @@ function assertProductionSecrets(env: Env): void {
     problems.push('SESSION_SECRET must be set to a real secret in production');
   }
   if (problems.length > 0) {
-    throw new Error(`Unsafe production configuration:\n${problems.map((p) => `  - ${p}`).join('\n')}`);
+    throw new Error(
+      `Unsafe production configuration:\n${problems.map((p) => `  - ${p}`).join('\n')}`,
+    );
   }
 }
 

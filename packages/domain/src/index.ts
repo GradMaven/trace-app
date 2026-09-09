@@ -26,3 +26,6 @@ export * from './access/export-bundle';
 export * from './access/retention';
 export * from './access/metering';
 export * from './access/audit-egress';
+export * from './access/audit-stream';
+export * from './access/prometheus';
+export * from './access/health';

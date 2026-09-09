@@ -20,6 +20,7 @@ import type { Prisma } from './index';
 import {
   createApiKey,
   createAudit,
+  createAuditStream,
   createWebhookEndpoint,
   disconnectPrisma,
   ensurePermissionCatalog,
@@ -53,6 +54,7 @@ import {
   withOrgContext,
   withPlatformContext,
   writeAuditLog,
+  writeHeartbeat,
 } from './index';
 
 const DEMO = {
@@ -222,9 +224,34 @@ async function main(): Promise<void> {
   await seedMetering();
   console.warn('[seed] Growth plan assigned and current-period usage recorded.');
 
+  await seedAuditStreams();
+  console.warn('[seed] Demo audit stream configured; worker heartbeat primed.');
+
   console.warn(
     '[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).',
   );
+}
+
+async function seedAuditStreams(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const adminId = DEMO.users.admin.id;
+
+  await withOrgContext(orgId, async (db) => {
+    const existing = await db.auditStream.findFirst({ where: { organizationId: orgId } });
+    if (!existing) {
+      await createAuditStream(db, {
+        organizationId: orgId,
+        name: 'NordWerk SIEM — compliance & audit',
+        url: 'https://siem.nordwerk.example/ingest/trace',
+        filters: { actionPrefixes: ['compliance.', 'audit.', 'evidence.', 'security.'] },
+        actorUserId: adminId,
+        requestId: 'seed',
+      });
+    }
+  });
+
+  // Prime the worker heartbeat so /health/detailed and the Ops page read "up".
+  await writeHeartbeat(getPrisma(), 'worker', { source: 'seed' });
 }
 
 async function seedMetering(): Promise<void> {

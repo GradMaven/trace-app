@@ -40,6 +40,8 @@ import { MfaModule } from './modules/mfa/mfa.module';
 import { ExportsModule } from './modules/exports/exports.module';
 import { GovernanceModule } from './modules/governance/governance.module';
 import { UsageModule } from './modules/usage/usage.module';
+import { AuditStreamsModule } from './modules/audit-streams/audit-streams.module';
+import { OpsModule } from './modules/ops/ops.module';
 
 @Module({
   imports: [
@@ -75,6 +77,8 @@ import { UsageModule } from './modules/usage/usage.module';
     ExportsModule,
     GovernanceModule,
     UsageModule,
+    AuditStreamsModule,
+    OpsModule,
   ],
   providers: [
     CatalogBootstrap,

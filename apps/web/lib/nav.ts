@@ -75,6 +75,8 @@ export const NAV: NavSection[] = [
       { label: 'Security', href: '/settings/security', ready: true },
       { label: 'Data & Retention', href: '/settings/data', ready: true },
       { label: 'Usage & Plan', href: '/settings/usage', ready: true },
+      { label: 'Audit Streams', href: '/settings/audit-streams', ready: true },
+      { label: 'Ops & Health', href: '/settings/ops', ready: true },
       { label: 'Organization', href: '/settings/organization' },
     ],
   },
