@@ -1,13 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { clientFetch } from '@/lib/client-api';
+import { API_BASE } from '@/lib/api';
 
-export default function LoginPage() {
+function LoginInner() {
+  const params = useSearchParams();
+  const ssoError = params.get('sso_error');
+
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [slug, setSlug] = useState('');
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -22,12 +28,24 @@ export default function LoginPage() {
     else setError(res.error?.message ?? 'Something went wrong.');
   }
 
+  function startSso(e: React.FormEvent) {
+    e.preventDefault();
+    const s = slug.trim().toLowerCase();
+    if (s) window.location.href = `${API_BASE}/auth/sso/${encodeURIComponent(s)}/start`;
+  }
+
   return (
     <main style={{ maxWidth: 400, margin: '12vh auto', padding: 24 }}>
       <h1 style={{ fontSize: 22, marginBottom: 4 }}>TRACE</h1>
       <p className="muted" style={{ marginTop: 0, marginBottom: 24 }}>
         Sign in to your sustainability evidence workspace.
       </p>
+
+      {ssoError && (
+        <p style={{ color: 'var(--critical)', fontSize: 13 }}>
+          Single sign-on failed ({ssoError}). Try the email link, or contact your admin.
+        </p>
+      )}
 
       {sent ? (
         <div className="card">
@@ -40,29 +58,64 @@ export default function LoginPage() {
           </p>
         </div>
       ) : (
-        <form onSubmit={submit} className="card">
-          <div className="field">
-            <label className="label" htmlFor="email">
-              Work email
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              className="input"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@company.com"
-            />
-          </div>
-          {error && (
-            <p style={{ color: 'var(--critical)', fontSize: 13 }}>{error}</p>
-          )}
-          <button className="btn btn-primary" disabled={busy} type="submit">
-            {busy ? 'Sending…' : 'Send sign-in link'}
-          </button>
-        </form>
+        <>
+          <form onSubmit={submit} className="card">
+            <div className="field">
+              <label className="label" htmlFor="email">
+                Work email
+              </label>
+              <input
+                id="email"
+                type="email"
+                required
+                className="input"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@company.com"
+              />
+            </div>
+            {error && <p style={{ color: 'var(--critical)', fontSize: 13 }}>{error}</p>}
+            <button className="btn btn-primary" disabled={busy} type="submit">
+              {busy ? 'Sending…' : 'Send sign-in link'}
+            </button>
+          </form>
+
+          <form onSubmit={startSso} className="card" style={{ marginTop: 14 }}>
+            <div className="field">
+              <label className="label" htmlFor="slug">
+                Single sign-on
+              </label>
+              <input
+                id="slug"
+                className="input"
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+                placeholder="workspace identifier"
+              />
+              <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                Your organization&apos;s short name, e.g. <span className="mono">nordwerk</span>.
+              </p>
+            </div>
+            <button className="btn" type="submit" disabled={!slug.trim()}>
+              Continue with SSO →
+            </button>
+          </form>
+        </>
       )}
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main style={{ padding: 24 }} className="muted">
+          Loading…
+        </main>
+      }
+    >
+      <LoginInner />
+    </Suspense>
   );
 }

@@ -73,6 +73,7 @@ export const NAV: NavSection[] = [
       { label: 'Webhooks', href: '/settings/webhooks', ready: true },
       { label: 'Integrations', href: '/settings/integrations', ready: true },
       { label: 'Security', href: '/settings/security', ready: true },
+      { label: 'Single Sign-On', href: '/settings/sso', ready: true },
       { label: 'Data & Retention', href: '/settings/data', ready: true },
       { label: 'Usage & Plan', href: '/settings/usage', ready: true },
       { label: 'Audit Streams', href: '/settings/audit-streams', ready: true },

@@ -147,6 +147,9 @@ model Organization {
   usageEvents         UsageEvent[]
   auditStreams        AuditStream[]
   auditStreamDeliveries AuditStreamDelivery[]
+  identityProvider    IdentityProvider?
+  ssoLinks           SsoLink[]
+  ssoLoginRequests   SsoLoginRequest[]
 
   @@map("organization")
 }
@@ -174,6 +177,8 @@ model User {
   name       String
   status     String   @default("active")
   mfaEnabled Boolean  @default(false) @map("mfa_enabled")
+  /// Last IdP `sub` seen for this user (convenience; SsoLink is authoritative).
+  externalId String?  @map("external_id")
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -181,6 +186,7 @@ model User {
   sessions        Session[]
   sentInvitations Invitation[] @relation("InvitationInvitedBy")
   mfa             UserMfa?
+  ssoLinks        SsoLink[]
 
   @@map("user")
 }
@@ -2120,4 +2126,77 @@ model ComponentHeartbeat {
   meta      Json     @default("{}")
 
   @@map("component_heartbeat")
+}
+
+// ===========================================================================
+// Single sign-on — OpenID Connect (Phase 13e)
+// ===========================================================================
+
+/// Per-organization OIDC configuration. One provider per org for now.
+/// `clientSecret` is stored to perform the authorization-code exchange (should
+/// be encrypted at rest in production, like `webhook_endpoint.secret`).
+/// `roleMapping` is the @trace/domain `OidcRoleMapping`; `allowedEmailDomains`
+/// (empty = any) gates which emails may be JIT-provisioned.
+model IdentityProvider {
+  id                   String   @id @default(uuid()) @db.Uuid
+  organizationId       String   @unique @map("organization_id") @db.Uuid
+  protocol             String   @default("oidc")
+  enabled              Boolean  @default(false)
+  issuer               String
+  clientId             String   @map("client_id")
+  clientSecret         String   @map("client_secret")
+  authorizationEndpoint String  @map("authorization_endpoint")
+  tokenEndpoint        String   @map("token_endpoint")
+  jwksUri              String   @map("jwks_uri")
+  scopes               String   @default("openid email profile")
+  roleMapping          Json     @default("{}") @map("role_mapping")
+  allowedEmailDomains  String[] @map("allowed_email_domains")
+  createdByUserId      String   @map("created_by_user_id") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  links        SsoLink[]
+
+  @@map("identity_provider")
+}
+
+/// Short-lived state for one in-flight SSO login: the CSRF `state`, the OIDC
+/// `nonce`, and the PKCE verifier. Looked up by `state` at the callback before
+/// any session exists — NOT RLS'd (like `magic_link_token`).
+model SsoLoginRequest {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  state          String    @unique
+  nonce          String
+  pkceVerifier   String    @map("pkce_verifier")
+  redirectAfter  String?   @map("redirect_after")
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
+  consumedAt     DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("sso_login_request")
+}
+
+/// Links a TRACE user to an IdP identity (`externalId` = the `sub` claim) within
+/// one organization.
+model SsoLink {
+  id                 String   @id @default(uuid()) @db.Uuid
+  organizationId     String   @map("organization_id") @db.Uuid
+  userId             String   @map("user_id") @db.Uuid
+  identityProviderId String   @map("identity_provider_id") @db.Uuid
+  externalId         String   @map("external_id")
+  lastLoginAt        DateTime @default(now()) @map("last_login_at") @db.Timestamptz(6)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  identityProvider IdentityProvider @relation(fields: [identityProviderId], references: [id], onDelete: Cascade)
+
+  @@unique([identityProviderId, externalId])
+  @@unique([identityProviderId, userId])
+  @@map("sso_link")
 }

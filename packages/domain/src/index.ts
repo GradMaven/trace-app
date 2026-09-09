@@ -29,3 +29,4 @@ export * from './access/audit-egress';
 export * from './access/audit-stream';
 export * from './access/prometheus';
 export * from './access/health';
+export * from './access/oidc';

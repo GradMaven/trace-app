@@ -789,6 +789,64 @@ component_heartbeat(component PK, beat_at, meta jsonb)   -- global, no org scope
   system-written log — not RLS'd (like `webhook_delivery`), read paths filter
   `organization_id`. `component_heartbeat` has no org scope.
 
+### Single sign-on — OpenID Connect (Phase 13e)
+
+```
+user(… , external_id text NULL)   -- last IdP `sub` seen; SsoLink is authoritative
+
+identity_provider(id, organization_id UNIQUE, protocol default 'oidc', enabled,
+                  issuer, client_id, client_secret, authorization_endpoint,
+                  token_endpoint, jwks_uri, scopes, role_mapping jsonb,
+                  allowed_email_domains text[], created_by_user_id, created_at, updated_at)
+
+sso_login_request(id, organization_id, state UNIQUE, nonce, pkce_verifier,
+                  redirect_after NULL, expires_at, consumed_at NULL, created_at)
+                  -- NOT RLS'd (looked up by `state` pre-auth, like magic_link_token)
+
+sso_link(id, organization_id, user_id, identity_provider_id, external_id,
+         last_login_at, created_at,
+         UNIQUE(identity_provider_id, external_id), UNIQUE(identity_provider_id, user_id))
+```
+
+- **`@trace/domain/access/oidc.ts`** (pure): `generatePkce()` → `{verifier,
+  challenge, method:'S256'}` (`challenge = base64url(sha256(verifier))`),
+  `pkceChallengeFor`, `randomUrlToken(bytes=32)` (state / nonce),
+  `buildAuthorizationUrl` (`response_type=code`, `code_challenge_method=S256`,
+  `state`, `nonce`), `verifyIdToken(token, {jwks, issuer, audience, nonce, now?})`
+  → `{ok, claims} | {ok:false, reason}` — **RS256 only** (`alg:none` / `HS*`
+  rejected), signature via `crypto.createPublicKey({key: jwk, format:'jwk'})` +
+  `crypto.verify('RSA-SHA256', …)`, then `iss` / `aud` (array-aware) / `exp`
+  (±120 s skew) / `nbf` / `sub` / `nonce`. `mapClaimsToRoleKeys(claims, mapping)`
+  — `OidcRoleMapping {defaultRoles, emailDomainRoles?, groupClaim?, groupRoles?}`
+  → de-duplicated role-key list. `emailDomainAllowed(email, allowedDomains)`
+  (empty list = any). `OIDC_LOGIN_TTL_SECONDS = 600`.
+- **`@trace/db/sso.ts`**: `upsertIdentityProvider` (https endpoints; every mapped
+  role must exist for the org; `clientSecret` optional on update — reuses the
+  stored one; audit `sso.provider_configured` / `_updated`), `getIdentityProvider`
+  (drops `client_secret`, adds `linkedMembers`), `deleteIdentityProvider`.
+  `beginSsoLogin(prisma, {orgSlug, redirectUri, redirectAfter?})` — resolves the
+  org by slug, reads its provider (must be `enabled`) in `withOrgContext`, mints
+  PKCE + `state` + `nonce`, writes an `sso_login_request`, returns the
+  authorization URL. `completeSsoLogin(prisma, deps, {state, code, redirectUri})`
+  — loads + consumes the `sso_login_request` (single-use, TTL), reads the
+  provider, `deps.exchangeCode(...)` → `id_token`, `deps.fetchJwks(jwksUri)`,
+  `verifyIdToken`, `emailDomainAllowed`, `prisma.user.upsert({email})` with
+  `external_id = sub`, then in `withOrgContext`: `sso_link.upsert` on `(provider,
+  external_id)` + `membership.create` with `mapClaimsToRoleKeys` roles when none
+  exists (re-activate if suspended); audit `sso.member_provisioned` /
+  `sso.login`. Returns `{userId, organizationId, roleKeys, provisioned,
+  redirectAfter}`. `pruneSsoLoginRequests` (worker housekeeping).
+- API: `SsoAuthController` (`GET /auth/sso/:slug/start` → 302; `GET
+  /auth/sso/:slug/callback` → `completeSsoLogin` → `AuthService.createSession` →
+  302; `@Public()` + `@MfaExempt()`; failures → `/login?sso_error=`; real
+  `exchangeCode` / `fetchJwks` via global `fetch`). `SsoConfigController`
+  (`GET/PUT/DELETE /settings/sso`, `POST /settings/sso/discover` —
+  `security.manage`).
+- RLS: `identity_provider` + `sso_link` are `FORCE` `current_org()` (migration
+  `0032_sso_rls`); the pre-auth flow resolves the org first, then
+  `withOrgContext`. `sso_login_request` is not RLS'd (state lookup before any
+  context exists).
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

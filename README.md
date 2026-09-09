@@ -29,6 +29,26 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 13e — OpenID Connect SSO (landed).** On top of Phase 13d: per-organization OIDC
+sign-in with just-in-time provisioning. **New `@trace/domain/access/oidc.ts`** (pure) —
+PKCE (`generatePkce` / `pkceChallengeFor`), the `state` / `nonce` tokens, the
+authorization-URL builder, `verifyIdToken` (RS256-only: signature against the IdP's JWKS via
+`crypto.createPublicKey({format:'jwk'})`, then `iss` / `aud` / `exp` / `nbf` / `sub` /
+`nonce`), and `mapClaimsToRoleKeys` (default + email-domain + IdP-group → role keys).
+`@trace/db/sso.ts` adds `upsertIdentityProvider` / `getIdentityProvider` (never returns the
+secret) / `deleteIdentityProvider`, `beginSsoLogin` (persists a single-use
+`sso_login_request` and returns the authorization URL), and `completeSsoLogin(prisma, deps,
+…)` — token exchange and JWKS fetch are injected — which verifies the ID token, enforces the
+email-domain allowlist, upserts the platform user, and JIT-creates a membership with the
+mapped roles inside `withOrgContext`. New `identity_provider` / `sso_login_request` /
+`sso_link` tables and `user.external_id`. The API adds `GET /auth/sso/:slug/{start,callback}`
+(`@Public()`, errors redirect to `/login?sso_error=`) and `GET/PUT/DELETE /settings/sso` +
+`POST /settings/sso/discover` (`security.manage`). Web adds a "Continue with SSO" box on the
+login page and a Settings → Single Sign-On config screen. Builds, typechecks, lints and unit
+tests are green; the Postgres-dependent integration suites (…, sso) run in CI. SAML, SCIM
+and a real billing provider are the only remaining Phase-13 items — see
+[docs/roadmap.md](docs/roadmap.md).
+
 **Phase 13d — Audit-log streaming + monitoring (landed).** On top of Phase 13c: push every
 matching activity-log entry to a per-organization SIEM stream, plus operational monitoring.
 **`@trace/domain/access`** gains (pure) `audit-stream.ts` (a stream filter + matcher, the

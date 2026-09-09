@@ -42,6 +42,7 @@ import { GovernanceModule } from './modules/governance/governance.module';
 import { UsageModule } from './modules/usage/usage.module';
 import { AuditStreamsModule } from './modules/audit-streams/audit-streams.module';
 import { OpsModule } from './modules/ops/ops.module';
+import { SsoModule } from './modules/sso/sso.module';
 
 @Module({
   imports: [
@@ -79,6 +80,7 @@ import { OpsModule } from './modules/ops/ops.module';
     UsageModule,
     AuditStreamsModule,
     OpsModule,
+    SsoModule,
   ],
   providers: [
     CatalogBootstrap,

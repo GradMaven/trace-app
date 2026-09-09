@@ -51,6 +51,7 @@ import {
   transitionEvidence,
   updateFinding,
   upsertControl,
+  upsertIdentityProvider,
   withOrgContext,
   withPlatformContext,
   writeAuditLog,
@@ -227,9 +228,44 @@ async function main(): Promise<void> {
   await seedAuditStreams();
   console.warn('[seed] Demo audit stream configured; worker heartbeat primed.');
 
+  await seedSso();
+  console.warn('[seed] Demo OIDC identity provider configured (disabled).');
+
   console.warn(
     '[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).',
   );
+}
+
+async function seedSso(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const adminId = DEMO.users.admin.id;
+
+  await withOrgContext(orgId, async (db) => {
+    const existing = await db.identityProvider.findUnique({ where: { organizationId: orgId } });
+    if (existing) return;
+    await upsertIdentityProvider(db, {
+      organizationId: orgId,
+      config: {
+        enabled: false, // demo only — leave magic-link login working
+        issuer: 'https://login.nordwerk.example',
+        clientId: 'trace-nordwerk',
+        clientSecret: 'demo-oidc-client-secret-not-real',
+        authorizationEndpoint: 'https://login.nordwerk.example/oauth2/authorize',
+        tokenEndpoint: 'https://login.nordwerk.example/oauth2/token',
+        jwksUri: 'https://login.nordwerk.example/oauth2/jwks',
+        scopes: 'openid email profile groups',
+        roleMapping: {
+          defaultRoles: ['esg_analyst'],
+          emailDomainRoles: { 'nordwerk.example': ['sustainability_manager'] },
+          groupClaim: 'groups',
+          groupRoles: { 'trace-admins': ['organization_admin'] },
+        },
+        allowedEmailDomains: ['nordwerk.example'],
+      },
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
+  });
 }
 
 async function seedAuditStreams(): Promise<void> {

@@ -48,6 +48,24 @@ export type {
 
 export { orgStats, platformMetrics } from './ops';
 export type { OrgStats } from './ops';
+
+export {
+  upsertIdentityProvider,
+  getIdentityProvider,
+  deleteIdentityProvider,
+  beginSsoLogin,
+  completeSsoLogin,
+  listSsoLinks,
+  pruneSsoLoginRequests,
+} from './sso';
+export type {
+  IdentityProviderConfig,
+  IdentityProviderView,
+  BeginSsoLoginArgs,
+  CompleteSsoLoginDeps,
+  CompleteSsoLoginArgs,
+  CompleteSsoLoginResult,
+} from './sso';
 export type {
   SubscriptionView,
   RecordUsageArgs,

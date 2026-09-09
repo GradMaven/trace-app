@@ -1,12 +1,17 @@
-import { activeOrganizationIds, ensureSubscription, getPrisma, withOrgContext } from '@trace/db';
+import {
+  activeOrganizationIds,
+  ensureSubscription,
+  getPrisma,
+  pruneSsoLoginRequests,
+  withOrgContext,
+} from '@trace/db';
 
 /**
- * Usage period roll-forward (Phase 13c). `ensureSubscription` advances an org's
- * `currentPeriod` cursor to the live billing period; counters are already keyed
- * by period so a new month starts fresh automatically. Runs every few hours;
- * only does work at a month boundary.
+ * Periodic housekeeping (Phase 13c/13e). `ensureSubscription` advances each org's
+ * billing-period cursor at the month boundary; `pruneSsoLoginRequests` drops
+ * expired / consumed OIDC login state. Runs every few hours.
  */
-export async function runUsageRollForward(): Promise<{ orgs: number }> {
+export async function runUsageRollForward(): Promise<{ orgs: number; prunedSsoRequests: number }> {
   const prisma = getPrisma();
   const orgIds = await activeOrganizationIds(prisma);
   for (const organizationId of orgIds) {
@@ -16,5 +21,6 @@ export async function runUsageRollForward(): Promise<{ orgs: number }> {
       // one org's failure should not stop the sweep
     }
   }
-  return { orgs: orgIds.length };
+  const prunedSsoRequests = await pruneSsoLoginRequests(prisma).catch(() => 0);
+  return { orgs: orgIds.length, prunedSsoRequests };
 }
