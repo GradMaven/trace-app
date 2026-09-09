@@ -72,6 +72,8 @@ export const NAV: NavSection[] = [
       { label: 'API Keys', href: '/settings/api-keys', ready: true },
       { label: 'Webhooks', href: '/settings/webhooks', ready: true },
       { label: 'Integrations', href: '/settings/integrations', ready: true },
+      { label: 'Security', href: '/settings/security', ready: true },
+      { label: 'Data & Retention', href: '/settings/data', ready: true },
       { label: 'Organization', href: '/settings/organization' },
     ],
   },

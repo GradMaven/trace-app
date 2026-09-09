@@ -40,8 +40,11 @@ import {
   runAuditSimulation,
   runCalculation,
   runComplianceEvaluation,
+  runExport,
   runExtractionPipeline,
   runQualityScan,
+  runRetention,
+  upsertRetentionPolicy,
   transitionEvidence,
   updateFinding,
   upsertControl,
@@ -210,9 +213,61 @@ async function main(): Promise<void> {
 
   await seedAsk();
   console.warn('[seed] Ask TRACE demo questions answered from the seeded records (stub provider).');
+
+  await seedGovernance();
+  console.warn('[seed] Data export produced and retention policies set (dry-run recorded).');
+
   console.warn(
     '[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).',
   );
+}
+
+async function seedGovernance(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const adminId = DEMO.users.admin.id;
+
+  const storage = createStorageService({
+    driver: 'local',
+    dir: process.env.STORAGE_LOCAL_DIR ?? '.data/documents',
+    signingSecret:
+      process.env.STORAGE_SIGNING_SECRET ?? 'dev-only-storage-signing-secret-change-me',
+    apiPublicUrl: process.env.API_PUBLIC_URL ?? 'http://localhost:4000',
+  });
+
+  await withOrgContext(orgId, async (db) => {
+    const result = await runExport(
+      db,
+      {
+        driver: 'local',
+        putBytes: (key, bytes, contentType) => storage.put({ key, body: bytes, contentType }),
+      },
+      { organizationId: orgId, actorUserId: adminId, requestId: 'seed' },
+    );
+    console.warn(
+      `[seed]   → export bundle: ${result.totalRecords} records, ${(result.sizeBytes / 1024).toFixed(1)} KB, sha256 ${result.sha256.slice(0, 12)}…`,
+    );
+
+    for (const [target, ageDays] of [
+      ['ai_job', 365],
+      ['webhook_delivery', 90],
+      ['ask_query', 180],
+    ] as const) {
+      await upsertRetentionPolicy(db, {
+        organizationId: orgId,
+        target,
+        ageDays,
+        enabled: true,
+        actorUserId: adminId,
+        requestId: 'seed',
+      });
+    }
+    await runRetention(db, {
+      organizationId: orgId,
+      mode: 'dry_run',
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
+  });
 }
 
 async function seedAccess(): Promise<void> {

@@ -1,11 +1,11 @@
 import { Injectable, type CanActivate, type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AppError, type Permission } from '@trace/shared';
-import { authenticateApiKey, getPrisma } from '@trace/db';
+import { authenticateApiKey, getPrisma, resolveMfaRequirement } from '@trace/db';
 import { resolvePermissions } from '@trace/domain';
 import type { RequestWithContext } from './request-context';
 import { hashToken } from './request-context';
-import { PUBLIC_KEY } from './decorators';
+import { MFA_EXEMPT_KEY, PUBLIC_KEY } from './decorators';
 
 export interface AuthenticatedActor {
   userId: string;
@@ -18,6 +18,12 @@ export interface AuthenticatedActor {
   supplierId: string | null;
   /** Set when the request authenticated with an API key rather than a session. */
   viaApiKeyId: string | null;
+  /** MFA is mandatory for this actor (enrolled, or the active org requires it). */
+  mfaRequired: boolean;
+  /** Whether this session has satisfied that requirement (or none applies). */
+  mfaSatisfied: boolean;
+  /** Whether the user has a confirmed TOTP enrolment. */
+  mfaEnrolled: boolean;
   permissions: Permission[];
 }
 
@@ -55,6 +61,23 @@ export class AuthGuard implements CanActivate {
 
     if (!actor && !isPublic) {
       throw AppError.unauthenticated();
+    }
+
+    if (actor && actor.mfaRequired && !actor.mfaSatisfied && !isPublic) {
+      const mfaExempt = this.reflector.getAllAndOverride<boolean>(MFA_EXEMPT_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
+      if (!mfaExempt) {
+        throw new AppError({
+          errorClass: 'forbidden',
+          code: 'auth.mfa_required',
+          message: actor.mfaEnrolled
+            ? 'Two-factor authentication is required for this session.'
+            : 'Your organization requires two-factor authentication. Set it up to continue.',
+          details: [{ message: actor.mfaEnrolled ? 'challenge' : 'enroll' }],
+        });
+      }
     }
     return true;
   }
@@ -98,6 +121,12 @@ export class AuthGuard implements CanActivate {
       }
     }
 
+    const mfa = await resolveMfaRequirement(
+      prisma,
+      session.userId,
+      membershipId ? activeOrgId : null,
+    );
+
     return {
       userId: session.userId,
       email: session.user.email,
@@ -107,6 +136,9 @@ export class AuthGuard implements CanActivate {
       membershipId,
       supplierId: membershipId ? supplierId : null,
       viaApiKeyId: null,
+      mfaRequired: mfa.mustSatisfy,
+      mfaSatisfied: !mfa.mustSatisfy || session.mfaPassed,
+      mfaEnrolled: mfa.enrolled,
       permissions,
     };
   }
@@ -139,6 +171,9 @@ export class AuthGuard implements CanActivate {
       membershipId: null,
       supplierId: null,
       viaApiKeyId: key.apiKeyId,
+      mfaRequired: false,
+      mfaSatisfied: true,
+      mfaEnrolled: false,
       permissions: key.permissions,
     };
   }

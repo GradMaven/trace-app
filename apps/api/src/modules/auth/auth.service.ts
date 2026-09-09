@@ -2,7 +2,13 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { loadEnv } from '@trace/config';
 import { AppError, type RoleKey } from '@trace/shared';
-import { getPrisma, withOrgContext, writeAuditLog } from '@trace/db';
+import {
+  getPrisma,
+  resolveMfaRequirement,
+  verifyMfaChallenge,
+  withOrgContext,
+  writeAuditLog,
+} from '@trace/db';
 import type { Response } from 'express';
 import { hashToken } from '../../common/request-context';
 import { SESSION_COOKIE } from '../../common/auth.guard';
@@ -14,6 +20,9 @@ interface VerifyResult {
   email: string;
   name: string;
   acceptedInvitations: string[];
+  /** True when this fresh session still has to pass an MFA challenge / enrol. */
+  mfaRequired: boolean;
+  mfaEnrolled: boolean;
 }
 
 @Injectable()
@@ -54,10 +63,15 @@ export class AuthService {
 
   async verifyMagicLink(rawToken: string, res: Response, requestId: string): Promise<VerifyResult> {
     const prisma = getPrisma();
-    const token = await prisma.magicLinkToken.findUnique({ where: { tokenHash: hashToken(rawToken) } });
+    const token = await prisma.magicLinkToken.findUnique({
+      where: { tokenHash: hashToken(rawToken) },
+    });
 
     if (!token || token.consumedAt || token.expiresAt.getTime() < Date.now()) {
-      throw AppError.unauthenticated('auth.invalid_token', 'This sign-in link is invalid or has expired.');
+      throw AppError.unauthenticated(
+        'auth.invalid_token',
+        'This sign-in link is invalid or has expired.',
+      );
     }
     await prisma.magicLinkToken.update({
       where: { id: token.id },
@@ -73,7 +87,10 @@ export class AuthService {
         where: { email: token.email, status: 'pending', expiresAt: { gt: new Date() } },
       });
       if (invitations.length === 0) {
-        throw AppError.unauthenticated('auth.no_account', 'No account or invitation for this address.');
+        throw AppError.unauthenticated(
+          'auth.no_account',
+          'No account or invitation for this address.',
+        );
       }
       user = await prisma.user.create({
         data: { id: randomUUID(), email: token.email, name: nameFromEmail(token.email) },
@@ -94,7 +111,46 @@ export class AuthService {
     }
 
     await this.createSession(user.id, res, requestId);
-    return { userId: user.id, email: user.email, name: user.name, acceptedInvitations };
+
+    const firstMembership = await prisma.membership.findFirst({
+      where: { userId: user.id, status: 'active' },
+      orderBy: { createdAt: 'asc' },
+      select: { organizationId: true },
+    });
+    const mfa = await resolveMfaRequirement(
+      prisma,
+      user.id,
+      firstMembership?.organizationId ?? null,
+    );
+
+    return {
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      acceptedInvitations,
+      mfaRequired: mfa.mustSatisfy,
+      mfaEnrolled: mfa.enrolled,
+    };
+  }
+
+  /**
+   * Complete the MFA step for the current (authenticated but unverified) session.
+   * Accepts a TOTP code or a single-use recovery code.
+   */
+  async completeMfaChallenge(
+    userId: string,
+    sessionId: string,
+    code: string,
+  ): Promise<{ usedRecoveryCode: boolean; recoveryCodesRemaining: number }> {
+    const result = await verifyMfaChallenge(getPrisma(), { userId, code });
+    if (!result.ok) {
+      throw AppError.unauthenticated('auth.mfa_failed', 'That code is not valid. Try again.');
+    }
+    await getPrisma().session.update({ where: { id: sessionId }, data: { mfaPassed: true } });
+    return {
+      usedRecoveryCode: result.usedRecoveryCode,
+      recoveryCodesRemaining: result.recoveryCodesRemaining,
+    };
   }
 
   async createSession(userId: string, res: Response, requestId: string): Promise<void> {
@@ -132,7 +188,11 @@ export class AuthService {
     this.clearCookies(res);
   }
 
-  async switchOrganization(userId: string, sessionId: string, organizationId: string): Promise<void> {
+  async switchOrganization(
+    userId: string,
+    sessionId: string,
+    organizationId: string,
+  ): Promise<void> {
     const prisma = getPrisma();
     const membership = await prisma.membership.findUnique({
       where: { organizationId_userId: { organizationId, userId } },
@@ -144,7 +204,11 @@ export class AuthService {
     await prisma.session.update({ where: { id: sessionId }, data: { organizationId } });
   }
 
-  private async acceptInvitation(invitationId: string, userId: string, requestId: string): Promise<void> {
+  private async acceptInvitation(
+    invitationId: string,
+    userId: string,
+    requestId: string,
+  ): Promise<void> {
     const prisma = getPrisma();
     const invitation = await prisma.invitation.findUnique({ where: { id: invitationId } });
     if (!invitation || invitation.status !== 'pending') return;

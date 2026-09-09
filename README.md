@@ -29,6 +29,28 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 13b — Enterprise identity & governance (landed).** On top of Phase 13a: account
+security and data governance. **`@trace/domain/access`** gains (pure) `totp.ts` (base32 +
+RFC-6238 TOTP + a drift-tolerant verifier + `otpauth://` URI + single-use recovery codes),
+`export-bundle.ts` (a 24-section export catalogue + manifest builder + 7-day TTL), and
+`retention.ts` (retention targets — **operational / derived data only**, never evidence,
+calculations, datapoints or the audit log — plus policy validation). `@trace/db` adds
+`mfa.ts` (enrol → confirm → one-time recovery codes; challenge with a TOTP or a consumed
+recovery code; disable; `resolveMfaRequirement` for the guard) and `governance.ts`
+(`runExport` — reads every tenant section into a canonical-JSON bundle, SHA-256, uploads it
+content-addressed, 7-day expiry; `runRetention` — `dry_run` counts, `apply` deletes, refused
+while the org is under legal hold). New `user_mfa` (user-keyed, not RLS'd like `session`),
+`export_job`, `retention_policy`, `retention_run` tables and `organization.require_mfa` /
+`legal_hold`. The API `AuthGuard` gains an MFA gate (`403 auth.mfa_required` on every route
+outside a small `@MfaExempt()` allowlist) with `POST /auth/mfa`, plus `/me/mfa/*`,
+`/exports/*` (`data.export`, also held by auditor + finance), and `/settings/{security,
+retention}/*` (`security.manage`). The worker runs an hourly retention **dry-run** sweep — it
+never deletes on its own. Web adds an `/auth/mfa` challenge page (the app layout redirects an
+unverified session there) and Settings → Security and Data & Retention. Builds, typechecks,
+lints and unit tests are green; the Postgres-dependent integration suites (…, access,
+governance) run in CI. SSO, SCIM, audit-log streaming and billing remain open under
+Phase 13 — see [docs/roadmap.md](docs/roadmap.md).
+
 **Phase 13a — Enterprise access (landed).** On top of Phases 1–12: programmatic access and
 event fan-out. **New `@trace/domain/access`** (pure) — API-key format + SHA-256 hashing +
 constant-time compare; coarse **scopes** (`read:all`, `activity:write`, …) that expand to a

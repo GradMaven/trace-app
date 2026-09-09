@@ -2,6 +2,7 @@ import { Controller, Get, Req } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { getPrisma } from '@trace/db';
+import { MfaExempt } from '../../common/decorators';
 import type { AuthenticatedActor } from '../../common/auth.guard';
 import type { RequestWithContext } from '../../common/request-context';
 
@@ -9,7 +10,10 @@ import type { RequestWithContext } from '../../common/request-context';
 @Controller('me')
 export class MeController {
   @Get()
-  @ApiOperation({ summary: 'The current user, their memberships, and permissions for the active org.' })
+  @MfaExempt()
+  @ApiOperation({
+    summary: 'The current user, their memberships, and permissions for the active org.',
+  })
   async me(@Req() req: Request): Promise<MeResponse> {
     const actor = (req as RequestWithContext & { actor?: AuthenticatedActor }).actor!;
     const prisma = getPrisma();
@@ -29,6 +33,11 @@ export class MeController {
       activeOrganizationId: actor.organizationId,
       activeSupplierId: actor.supplierId,
       permissions: actor.permissions,
+      mfa: {
+        required: actor.mfaRequired,
+        satisfied: actor.mfaSatisfied,
+        enrolled: actor.mfaEnrolled,
+      },
       memberships: memberships.map((m) => ({
         organization: m.organization,
         supplier: m.supplier,
@@ -43,6 +52,7 @@ interface MeResponse {
   activeOrganizationId: string | null;
   activeSupplierId: string | null;
   permissions: string[];
+  mfa: { required: boolean; satisfied: boolean; enrolled: boolean };
   memberships: Array<{
     organization: { id: string; slug: string; legalName: string };
     supplier: { id: string; name: string } | null;

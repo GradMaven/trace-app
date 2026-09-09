@@ -21,3 +21,6 @@ export * from './access/scopes';
 export * from './access/api-key';
 export * from './access/webhook';
 export * from './access/role';
+export * from './access/totp';
+export * from './access/export-bundle';
+export * from './access/retention';

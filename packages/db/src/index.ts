@@ -147,3 +147,36 @@ export type {
   DispatchWebhooksResult,
   WebhookFetch,
 } from './access';
+
+export {
+  getMfaStatus,
+  beginMfaEnrollment,
+  confirmMfaEnrollment,
+  verifyMfaChallenge,
+  disableMfa,
+  resolveMfaRequirement,
+} from './mfa';
+export type { MfaStatus } from './mfa';
+
+export {
+  runExport,
+  listExportJobs,
+  exportJobById,
+  expireStaleExports,
+  upsertRetentionPolicy,
+  deleteRetentionPolicy,
+  listRetentionPolicies,
+  listRetentionRuns,
+  runRetention,
+  activeOrganizationIds,
+  RETENTION_TARGET_KEYS,
+} from './governance';
+export type {
+  ExportDeps,
+  RunExportArgs,
+  RunExportResult,
+  ExportJobView,
+  RetentionPolicyView,
+  RunRetentionArgs,
+  RetentionRunSummary,
+} from './governance';

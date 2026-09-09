@@ -99,6 +99,10 @@ model Organization {
   baseCurrency          String             @default("EUR") @map("base_currency") @db.Char(3)
   reportingPeriodConfig Json               @default("{}") @map("reporting_period_config")
   status                OrganizationStatus @default(active)
+  /// When true, every member must pass MFA before using the workspace (Phase 13b).
+  requireMfa            Boolean            @default(false) @map("require_mfa")
+  /// When true, retention `apply` runs are refused for this org (Phase 13b).
+  legalHold            Boolean            @default(false) @map("legal_hold")
   createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -135,6 +139,9 @@ model Organization {
   apiKeys             ApiKey[]
   webhookEndpoints    WebhookEndpoint[]
   webhookDeliveries   WebhookDelivery[]
+  exportJobs          ExportJob[]
+  retentionPolicies   RetentionPolicy[]
+  retentionRuns       RetentionRun[]
 
   @@map("organization")
 }
@@ -168,6 +175,7 @@ model User {
   memberships     Membership[]
   sessions        Session[]
   sentInvitations Invitation[] @relation("InvitationInvitedBy")
+  mfa             UserMfa?
 
   @@map("user")
 }
@@ -1830,4 +1838,121 @@ enum WebhookDeliveryStatus {
   dead
 
   @@map("webhook_delivery_status")
+}
+
+// ===========================================================================
+// Enterprise identity & governance (Phase 13b) — MFA, data export, retention
+// ===========================================================================
+
+/// One user's TOTP two-factor configuration. Platform-scoped (keyed on the
+/// user, spans every org they belong to), like `session` — NOT RLS'd.
+/// `secret` is base32; `recoveryCodes` holds HMAC-SHA256 hashes of single-use
+/// codes, consumed by being removed from the array. `confirmedAt` is null while
+/// enrolment is pending (a secret generated but not yet proven).
+model UserMfa {
+  userId        String    @id @map("user_id") @db.Uuid
+  secret        String
+  recoveryCodes String[]  @map("recovery_codes")
+  confirmedAt   DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  lastUsedAt    DateTime? @map("last_used_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_mfa")
+}
+
+/// A full-tenant data export. The bundle (canonical JSON of every tenant
+/// section) is content-addressed in object storage; only the metadata and a
+/// short-lived signed URL are exposed. `expiresAt` past → the bundle is purged
+/// and `status` becomes `expired`.
+model ExportJob {
+  id                String          @id @default(uuid()) @db.Uuid
+  organizationId    String          @map("organization_id") @db.Uuid
+  status            ExportJobStatus @default(pending)
+  reportingPeriod   String?         @map("reporting_period")
+  requestedByUserId String          @map("requested_by_user_id") @db.Uuid
+  format            String          @default("trace.export/v1")
+  storageKey        String?         @map("storage_key")
+  sha256            String?
+  sizeBytes         Int?            @map("size_bytes")
+  sectionCounts     Json            @default("{}") @map("section_counts")
+  totalRecords      Int             @default(0) @map("total_records")
+  manifest          Json?
+  error             String?
+  startedAt         DateTime?       @map("started_at") @db.Timestamptz(6)
+  completedAt       DateTime?       @map("completed_at") @db.Timestamptz(6)
+  expiresAt         DateTime?       @map("expires_at") @db.Timestamptz(6)
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@map("export_job")
+}
+
+enum ExportJobStatus {
+  pending
+  running
+  ready
+  failed
+  expired
+
+  @@map("export_job_status")
+}
+
+/// A retention rule: rows of `target` older than `ageDays` (by the target's
+/// timestamp column) are eligible for deletion. Targets are operational /
+/// derived data only (see @trace/domain RETENTION_TARGETS) — never lineage or
+/// the audit log.
+model RetentionPolicy {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  target          String
+  ageDays         Int      @map("age_days")
+  enabled         Boolean  @default(true)
+  createdByUserId String   @map("created_by_user_id") @db.Uuid
+  lastRunAt       DateTime? @map("last_run_at") @db.Timestamptz(6)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  runs         RetentionRun[]
+
+  @@unique([organizationId, target])
+  @@map("retention_policy")
+}
+
+/// One retention execution — dry-run (count only) or apply (delete). The
+/// worker records a dry-run per enabled policy on a schedule so admins can see
+/// what would be purged; `apply` is always a deliberate manual action.
+model RetentionRun {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
+  policyId       String?       @map("policy_id") @db.Uuid
+  target         String
+  mode           RetentionMode
+  ageDays        Int           @map("age_days")
+  cutoff         DateTime      @db.Timestamptz(6)
+  matched        Int           @default(0)
+  deleted        Int           @default(0)
+  ranByUserId    String?       @map("ran_by_user_id") @db.Uuid
+  startedAt      DateTime      @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt    DateTime?     @map("completed_at") @db.Timestamptz(6)
+  durationMs     Int           @default(0) @map("duration_ms")
+  error          String?
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  policy       RetentionPolicy? @relation(fields: [policyId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, startedAt])
+  @@map("retention_run")
+}
+
+enum RetentionMode {
+  dry_run
+  apply
+
+  @@map("retention_mode")
 }

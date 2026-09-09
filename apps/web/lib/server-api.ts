@@ -35,6 +35,7 @@ export interface Me {
   activeOrganizationId: string | null;
   activeSupplierId: string | null;
   permissions: string[];
+  mfa: { required: boolean; satisfied: boolean; enrolled: boolean };
   memberships: Array<{
     organization: { id: string; slug: string; legalName: string };
     supplier: { id: string; name: string } | null;

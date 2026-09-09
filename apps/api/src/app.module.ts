@@ -34,6 +34,9 @@ import { ProcurementModule } from './modules/procurement/procurement.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { ApiKeysModule } from './modules/api-keys/api-keys.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
+import { MfaModule } from './modules/mfa/mfa.module';
+import { ExportsModule } from './modules/exports/exports.module';
+import { GovernanceModule } from './modules/governance/governance.module';
 
 @Module({
   imports: [
@@ -65,6 +68,9 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     IntegrationsModule,
     ApiKeysModule,
     WebhooksModule,
+    MfaModule,
+    ExportsModule,
+    GovernanceModule,
   ],
   providers: [
     CatalogBootstrap,

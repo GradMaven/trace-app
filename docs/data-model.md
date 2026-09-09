@@ -626,6 +626,59 @@ webhook_delivery(id, organization_id, endpoint_id, event, payload jsonb, status,
   second is a cross-tenant operational log swept by the dispatcher (like
   `audit_log`); both carry `organization_id` and every read path filters on it.
 
+### Enterprise identity & governance (Phase 13b)
+
+```
+organization(… , require_mfa boolean default false, legal_hold boolean default false)
+
+user_mfa(user_id PK, secret, recovery_codes text[], confirmed_at NULL, last_used_at NULL,
+         created_at, updated_at)          -- user-keyed, NOT RLS'd (like session)
+
+export_job(id, organization_id, status, reporting_period NULL, requested_by_user_id,
+           format, storage_key NULL, sha256 NULL, size_bytes NULL, section_counts jsonb,
+           total_records int, manifest jsonb NULL, error NULL, started_at NULL,
+           completed_at NULL, expires_at NULL, created_at)
+
+retention_policy(id, organization_id, target, age_days int, enabled bool,
+                 created_by_user_id, last_run_at NULL, created_at, updated_at,
+                 UNIQUE(organization_id, target))
+
+retention_run(id, organization_id, policy_id NULL, target, mode (dry_run|apply),
+              age_days int, cutoff, matched int, deleted int, ran_by_user_id NULL,
+              started_at, completed_at NULL, duration_ms int, error NULL)
+```
+
+- **`@trace/domain/access`** (pure): `totp.ts` — `base32Encode/Decode`,
+  `generateTotpSecret` (20 bytes), `totpCodeAt` (SHA-1 HOTP, 6 digits, 30s step),
+  `verifyTotp` (±1-step drift, constant-time), `otpauthUrl`,
+  `generateRecoveryCodes` (10 × `xxxxx-xxxxx`) + `hashRecoveryCode`
+  (HMAC-SHA256). `export-bundle.ts` — `EXPORT_SECTIONS` (24), `buildExportManifest`,
+  `EXPORT_TTL_HOURS = 168`. `retention.ts` — `RETENTION_TARGETS` (`ai_job`,
+  `webhook_delivery`, `quality_scan`, `audit_simulation_run`, `ask_query`,
+  `integration_run`, `export_job` — each with a hard minimum age; **no** lineage
+  or audit-log target), `validateRetentionPolicy`, `retentionCutoff`.
+- **`@trace/db/mfa.ts`**: `beginMfaEnrollment` (unconfirmed secret),
+  `confirmMfaEnrollment` (verify a live code → set `confirmed_at`, store hashed
+  recovery codes, `user.mfa_enabled = true`, audit `mfa.enrolled`),
+  `verifyMfaChallenge` (TOTP → bump `last_used_at`; else a recovery-code hash →
+  remove it from the array), `disableMfa` (requires a code; audit
+  `mfa.disabled`), `resolveMfaRequirement` (`{ mustSatisfy: enrolled ||
+  org.require_mfa, enrolled, orgMandates }`).
+- **`@trace/db/governance.ts`**: `runExport` mirrors the Phase-8 audit package —
+  read every section (`serializeRow` turns Date → ISO, Decimal → string, Buffer
+  → base64), `canonicalJson`, sha256, `deps.putBytes('exports/<org>/<sha256>/export.json')`,
+  job → `ready` with `manifest` + `section_counts` + `expires_at`; audit
+  `data.exported`. `expireStaleExports` flips `ready → expired` past the TTL and
+  drops the key. `upsertRetentionPolicy` / `deleteRetentionPolicy` /
+  `listRetentionPolicies` / `listRetentionRuns`. `runRetention` — per enabled
+  policy: `cutoff = now − ageDays`, `count` (and `deleteMany` when `mode =
+  apply`) scoped to the tenant; `apply` throws `retention.legal_hold` when
+  `organization.legal_hold`; one `retention_run` per policy + one
+  `retention.run` audit entry. `activeOrganizationIds` feeds the worker's sweep.
+- RLS: `export_job` / `retention_policy` / `retention_run` are `FORCE`
+  `current_org()` (migration `0026_governance_rls`). `user_mfa` is not RLS'd —
+  identity, keyed on the user, like `session`.
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

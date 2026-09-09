@@ -186,6 +186,7 @@ export const ROLE_DEFINITIONS: Record<RoleKey, RoleDefinition> = {
       'audit.read',
       'auditlog.read',
       'report.generate',
+      'data.export',
       'ask.use',
     ],
   },
@@ -196,7 +197,7 @@ export const ROLE_DEFINITIONS: Record<RoleKey, RoleDefinition> = {
     description:
       'Read-only access to evidence, lineage, calculations, approvals, and the activity log.',
     isPlatform: false,
-    permissions: [...READ_ONLY_SUSTAINABILITY, 'auditlog.read'],
+    permissions: [...READ_ONLY_SUSTAINABILITY, 'auditlog.read', 'data.export'],
   },
 
   supplier_user: {

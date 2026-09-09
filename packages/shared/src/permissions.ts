@@ -22,6 +22,8 @@ export const PERMISSIONS = {
   'role.manage': 'Create, edit, and assign roles',
   'apikey.manage': 'Create and revoke API keys for programmatic access',
   'webhook.manage': 'Configure outbound webhook endpoints and inspect deliveries',
+  'security.manage': 'Manage organization security settings — MFA enforcement, data retention',
+  'data.export': 'Export the organization’s data as a downloadable bundle',
 
   // Suppliers
   'supplier.read': 'View suppliers',

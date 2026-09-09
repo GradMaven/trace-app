@@ -5,6 +5,7 @@ import { loadEnv } from '@trace/config';
 import { QUEUES, type DocumentProcessingJob, type NotificationJob } from './queues';
 import { processDocument } from './processors/document-processing';
 import { runWebhookDispatchPass } from './processors/webhook-dispatch';
+import { runRetentionSweep } from './processors/retention';
 
 const env = loadEnv();
 const log = pino({ level: env.LOG_LEVEL, name: 'worker' });
@@ -79,9 +80,30 @@ const webhookTimer = setInterval(() => {
 }, WEBHOOK_DISPATCH_INTERVAL_MS);
 webhookTimer.unref();
 
+// Retention sweep (Phase 13b): a periodic *dry-run* over every org's enabled
+// policies so admins can see what would be purged. Deletion is always manual.
+const RETENTION_SWEEP_INTERVAL_MS = 60 * 60_000;
+let retentionSweepRunning = false;
+const retentionTimer = setInterval(() => {
+  if (retentionSweepRunning) return;
+  retentionSweepRunning = true;
+  runRetentionSweep()
+    .then((r) => {
+      if (r.policies > 0) log.info(r, 'retention dry-run sweep');
+    })
+    .catch((err) =>
+      log.warn({ err: err instanceof Error ? err.message : String(err) }, 'retention sweep failed'),
+    )
+    .finally(() => {
+      retentionSweepRunning = false;
+    });
+}, RETENTION_SWEEP_INTERVAL_MS);
+retentionTimer.unref();
+
 async function shutdown(signal: string): Promise<void> {
   log.info({ signal }, 'shutting down worker');
   clearInterval(webhookTimer);
+  clearInterval(retentionTimer);
   await Promise.all([notificationsWorker.close(), documentWorker.close()]);
   await Promise.all([notificationsQueue.close(), documentProcessingQueue.close()]);
   await connection.quit().catch(() => undefined);

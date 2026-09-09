@@ -18,12 +18,12 @@ function VerifyInner() {
       return;
     }
     void (async () => {
-      const res = await clientFetch('/auth/verify', {
+      const res = await clientFetch<{ mfaRequired?: boolean }>('/auth/verify', {
         method: 'POST',
         body: JSON.stringify({ token }),
       });
       if (res.ok) {
-        router.replace('/');
+        router.replace(res.data?.mfaRequired ? '/auth/mfa' : '/');
       } else {
         setState('error');
         setMessage(res.error?.message ?? 'This link is invalid or has expired.');
@@ -34,7 +34,10 @@ function VerifyInner() {
   return (
     <main style={{ maxWidth: 400, margin: '18vh auto', padding: 24 }}>
       <h1 style={{ fontSize: 20 }}>TRACE</h1>
-      <p className={state === 'error' ? '' : 'muted'} style={{ color: state === 'error' ? 'var(--critical)' : undefined }}>
+      <p
+        className={state === 'error' ? '' : 'muted'}
+        style={{ color: state === 'error' ? 'var(--critical)' : undefined }}
+      >
         {message}
       </p>
       {state === 'error' && (
@@ -48,7 +51,13 @@ function VerifyInner() {
 
 export default function VerifyPage() {
   return (
-    <Suspense fallback={<main style={{ padding: 24 }} className="muted">Loading…</main>}>
+    <Suspense
+      fallback={
+        <main style={{ padding: 24 }} className="muted">
+          Loading…
+        </main>
+      }
+    >
       <VerifyInner />
     </Suspense>
   );
