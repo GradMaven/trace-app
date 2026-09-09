@@ -833,12 +833,78 @@ async function seedCarbon(): Promise<void> {
       });
     }
 
-    await recomputeEmissions(db, {
-      organizationId: orgId,
-      reportingPeriod: 'FY2025',
-      actorUserId: adminId,
-      requestId: 'seed',
-    });
+    // 4. A prior year (FY2024) so the Command Center shows a real trend.
+    // Illustrative — a slightly higher baseline the FY2025 figures improve on.
+    const priorYear: Array<{
+      scope: string;
+      ghgCategory: string | null;
+      value: number;
+      unit: string;
+      category: string;
+    }> = [
+      {
+        scope: 'scope_1',
+        ghgCategory: null,
+        value: 4_600_000,
+        unit: 'kWh',
+        category: 'Stationary combustion — natural gas',
+      },
+      {
+        scope: 'scope_2_location',
+        ghgCategory: null,
+        value: 13_100_000,
+        unit: 'kWh',
+        category: 'Purchased electricity (location-based)',
+      },
+      {
+        scope: 'scope_2_market',
+        ghgCategory: null,
+        value: 13_100_000,
+        unit: 'kWh',
+        category: 'Purchased electricity (market-based)',
+      },
+      {
+        scope: 'scope_3',
+        ghgCategory: 'cat_4_upstream_transportation',
+        value: 2_600_000,
+        unit: 't.km',
+        category: 'Upstream road freight',
+      },
+    ];
+    for (const a of priorYear) {
+      const row = await db.activityData.create({
+        data: {
+          organizationId: orgId,
+          scope: a.scope as never,
+          ghgCategory: (a.ghgCategory as never) ?? null,
+          category: a.category,
+          description: 'FY2024 comparative',
+          value: a.value,
+          unit: a.unit,
+          reportingPeriod: 'FY2024',
+          provenance: a.scope === 'scope_3' ? 'supplier_reported' : 'measured',
+          subjectType: 'organization',
+          subjectId: orgId,
+          occurredOn: new Date('2024-12-31'),
+          createdByUserId: analystId,
+        },
+      });
+      await runCalculation(db, {
+        organizationId: orgId,
+        activityId: row.id,
+        actorUserId: analystId,
+        requestId: 'seed',
+      });
+    }
+
+    for (const p of ['FY2024', 'FY2025']) {
+      await recomputeEmissions(db, {
+        organizationId: orgId,
+        reportingPeriod: p,
+        actorUserId: adminId,
+        requestId: 'seed',
+      });
+    }
 
     await writeAuditLog(db, {
       organizationId: orgId,

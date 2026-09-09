@@ -100,3 +100,6 @@ export type {
   GenerateAuditPackageArgs,
   GenerateAuditPackageResult,
 } from './audit-workspace';
+
+export { commandCenterOverview } from './command-center';
+export type { CommandCenterOverview } from './command-center';

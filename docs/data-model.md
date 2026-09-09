@@ -475,6 +475,17 @@ audit_package(id, organization_id, audit_id NULL, reporting_period NULL, rule_st
 - RLS (`FORCE`, `current_org()`) on `audit`, `audit_finding`, `audit_simulation_run`,
   `audit_package` — migration `0016_audit_rls`.
 
+### Command Center (Phase 9)
+
+No new tables. `@trace/db.commandCenterOverview(db, organizationId, reportingPeriod?)` is a
+**read-only aggregate**: it composes `inventorySummary` (per period, for the emissions
+trend), `qualitySummary`, `complianceGaps`, and lean group-bys over `datapoint` (provenance
+/ label mix), `audit_simulation_run` + `audit_finding`, `disclosure_status` +
+`compliance_run`, `supplier` + `supplier_passport` + `supplier_request`, and `audit_log`
+(recent activity) into one payload for `GET /command-center/overview` (`organization.read`).
+No writes, no audit entry — every figure is read straight from a model row or an existing
+engine.
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

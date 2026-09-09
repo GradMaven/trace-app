@@ -29,6 +29,20 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 9 — Command Center (landed).** On top of Phases 1–8: one read-only aggregate,
+`commandCenterOverview`, composes what the earlier phases already produce — the GHG
+inventory and a multi-period trend, the data-provenance mix (and the primary-data share),
+the Trust distribution, audit readiness and open findings, compliance progress and the top
+gaps, supplier coverage, and recent activity — into a single payload behind
+`GET /command-center/overview`. **Nothing is estimated for display**: every figure is read
+straight from a model row or an existing engine, no writes, no new domain package. The
+Command Center page is rebuilt on that endpoint with band-coloured gauges, an inline-SVG
+emissions-trend sparkline, provenance and Trust stack-bars, and navigable lists of the top
+compliance gaps and audit findings. Builds, typechecks, lints and unit tests are green; the
+Postgres-dependent integration suites (RLS / tenant isolation, supplier, evidence, carbon,
+AI extraction, trust, compliance, audit, command center) run in CI. See
+[docs/roadmap.md](docs/roadmap.md) for exact status and what's next (Phase 10 — Ask TRACE).
+
 **Phase 8 — Audit workspace (landed).** On top of Phases 1–7: `@trace/domain/audit` — a
 documented additive **audit-readiness score** (`audit-readiness@1.0.0`, 0–100) over evidence
 verification, calculation reproducibility and approval, data quality, Trust level,
@@ -48,39 +62,15 @@ Postgres-dependent integration suites (RLS / tenant isolation, supplier, evidenc
 AI extraction, trust, compliance, audit) run in CI. See [docs/roadmap.md](docs/roadmap.md)
 for exact status and what's next (Phase 9 — Command Center).
 
-**Phase 7 — Compliance (landed).** On top of Phases 1–6: the new **`@trace/compliance`**
-package — a **versioned regulatory rule store** (frozen typed data; `esrs@2026.1` covers
-ESRS E1 climate: transition plan, targets, energy & mix, gross Scope 1/2/3) and a generic,
-pure **mapping engine** that turns the tenant's datapoints, calculations and evidence into
-an **objective** status per required disclosure (`not_started → data_available →
-evidence_available → mapping_complete`, with `review_required` when data exists but has a
-problem). It **never** says "compliant". `@trace/db` adds the global rule tables plus
-tenant `compliance_mapping` / `disclosure_status` / `compliance_control` / `compliance_run`
-(RLS on the tenant tables); `runComplianceEvaluation` is an idempotent re-run that
-preserves human `confirmed` decisions, and every mutation is hash-chain audit-logged. Web
-adds Compliance → Requirements, Disclosures and a disclosure **"why"** page that traces
-requirement → datapoint → calculation → evidence, plus a Gaps list — every screen carries a
-"supports professional judgement, not legal advice" disclaimer. Builds, typechecks, lints,
-and unit tests are green; the Postgres-dependent integration suites (RLS / tenant
-isolation, supplier, evidence, carbon, AI extraction, trust, compliance) run in CI. See
-[docs/roadmap.md](docs/roadmap.md) for exact status and what's next (Phase 8 — Audit
-workspace).
-
-**Phase 6 — Trust Engine (landed).** On top of Phases 1–5: `@trace/domain/trust` — a
-documented, additive **TRACE Trust Score** per datapoint (`trust-model@1.0.0`, 0–100 with a
-stored per-dimension breakdown so every score explains itself), a **data-quality check
-engine** (`quality-rules@1.0.0`, 12 issue kinds — missing value/unit/evidence, unverified /
-expired evidence, stale data, unit inconsistency, impossible value, duplicate, conflicting
-supplier report, outdated factor, low methodology tier), and deterministic **anomaly
-detection** (`anomaly-detector@1.0.0` — modified z-score over history and peers,
-period-over-period step). `@trace/db` adds an immutable, version-chained `trust_score`, an
-idempotent `data_quality_issue` / `anomaly` model (dedupe key, auto-resolve, sticky
-dismiss) and a `quality_scan` run record; `runQualityScan` scores every in-scope datapoint,
-refreshes issues, detects anomalies and writes one audit entry. Web adds **Data → Data
-Quality** (dashboard, scan history, run scan), issue and anomaly triage queues, and the
-Trust Score breakdown on the datapoint page. *(For brevity, phase-by-phase notes for
-Phases 1–6 have been trimmed — see [docs/roadmap.md](docs/roadmap.md) for the full
-per-phase status.)*
+*(Phase-by-phase notes for Phases 1–7 have been trimmed — see
+[docs/roadmap.md](docs/roadmap.md) for the full per-phase status. In brief: **1** monorepo +
+auth + RBAC + tenancy + hash-chained audit log; **2** supplier directory, portal and
+versioned Supplier Passport; **3** evidence infrastructure — storage, the Evidence lifecycle
+state machine, Datapoints; **4** the deterministic, reproducible carbon engine; **5** the
+`@trace/ai` package — Claude adapter + dev stub, a human-gated document-extraction pipeline;
+**6** the Trust Engine — Trust Score, data-quality checks, anomaly detection; **7** the
+`@trace/compliance` package — a versioned ESRS rule store and a generic mapping engine that
+never says "compliant".)*
 
 Reference documents:
 

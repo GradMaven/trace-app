@@ -28,6 +28,7 @@ import { CandidateDatapointsModule } from './modules/candidate-datapoints/candid
 import { TrustModule } from './modules/trust/trust.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
 import { AuditWorkspaceModule } from './modules/audit/audit.module';
+import { CommandCenterModule } from './modules/command-center/command-center.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { AuditWorkspaceModule } from './modules/audit/audit.module';
     TrustModule,
     ComplianceModule,
     AuditWorkspaceModule,
+    CommandCenterModule,
   ],
   providers: [
     CatalogBootstrap,
