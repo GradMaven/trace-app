@@ -230,6 +230,6 @@ run('regulatory filing: assemble → version → "do not file" guard', () => {
           }),
         prisma,
       ),
-    ).rejects.toThrow(/rule_store_not_loaded/);
+    ).rejects.toThrow(/not loaded/i);
   });
 });

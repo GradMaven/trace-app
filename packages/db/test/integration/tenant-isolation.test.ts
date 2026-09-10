@@ -28,16 +28,10 @@ run('tenant isolation (RLS)', () => {
   beforeAll(async () => {
     prisma = createPrisma(TEST_URL!);
 
-    // Clean slate for the ids we use.
-    await prisma.$executeRawUnsafe('SET session_replication_role = replica');
-    for (const id of [orgA, orgB]) {
-      await prisma.auditLog.deleteMany({ where: { organizationId: id } }).catch(() => undefined);
-      await prisma.auditHead.deleteMany({ where: { scope: id } }).catch(() => undefined);
-      await prisma.organization.deleteMany({ where: { id } }).catch(() => undefined);
-    }
-    await prisma.user.deleteMany({ where: { id: { in: [userA, userB] } } }).catch(() => undefined);
-    await prisma.$executeRawUnsafe('SET session_replication_role = origin');
-
+    // Ids are fresh per run (randomUUID) and CI starts from an empty database,
+    // so no pre-clean is needed — and the test role is deliberately a
+    // non-superuser (so RLS FORCE actually applies), which cannot disable
+    // triggers or delete from the append-only audit_log anyway.
     await prisma.user.createMany({
       data: [
         { id: userA, email: `a-${userA}@test.example`, name: 'A' },

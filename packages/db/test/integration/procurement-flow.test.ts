@@ -53,10 +53,13 @@ run('procurement: supplier carbon comparison + what-if scenario', () => {
       );
     }
 
+    // Org-scoped, not shared-library: `emission_factor` is not RLS-isolated, so
+    // an `organizationId: null` factor here would leak into every other
+    // integration file's factor selection.
     await prisma.emissionFactor.createMany({
       data: [
         {
-          organizationId: null,
+          organizationId: orgA,
           source: 'CUSTOM',
           sourceRef: 'steel-specific-p',
           name: 'steel supplier-specific',
@@ -70,7 +73,7 @@ run('procurement: supplier carbon comparison + what-if scenario', () => {
           validFrom: new Date('2024-01-01'),
         },
         {
-          organizationId: null,
+          organizationId: orgA,
           source: 'EXIOBASE',
           sourceRef: 'eeio-eur-p',
           name: 'EEIO purchased goods EUR',

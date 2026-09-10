@@ -43,16 +43,19 @@ export interface IdentityProviderConfig {
 }
 
 function assertHttps(url: string, field: string): string {
+  const trimmed = url.trim();
   let u: URL;
   try {
-    u = new URL(url);
+    u = new URL(trimmed);
   } catch {
     throw AppError.unprocessable('sso.bad_url', `${field} is not a valid URL.`);
   }
   if (u.protocol !== 'https:' && u.hostname !== 'localhost') {
     throw AppError.unprocessable('sso.insecure_url', `${field} must use https.`);
   }
-  return u.toString();
+  // Return the value as entered — never `URL.toString()`, which appends a path
+  // "/" and would break the exact-string `iss` comparison OIDC requires.
+  return trimmed;
 }
 
 export async function upsertIdentityProvider(

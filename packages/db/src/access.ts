@@ -17,7 +17,7 @@ import {
 } from '@trace/domain';
 import { AppError, type Permission } from '@trace/shared';
 import { writeAuditLog } from './audit';
-import { type PrismaClient, type TenantDb } from './client';
+import { withOrgContext, type PrismaClient, type TenantDb } from './client';
 
 /**
  * Enterprise access (Phase 13): API keys + outbound webhooks.
@@ -621,24 +621,34 @@ export async function dispatchDueWebhookDeliveries(
   const limit = deps.limit ?? DISPATCH_BATCH;
   const result: DispatchWebhooksResult = { attempted: 0, succeeded: 0, failed: 0, dead: 0 };
 
+  // `webhook_delivery` is repository-scoped (no RLS); read the due batch directly.
   const due = await prisma.webhookDelivery.findMany({
     where: { status: 'pending', nextAttemptAt: { lte: now } },
     orderBy: { nextAttemptAt: 'asc' },
     take: limit,
-    include: { endpoint: true },
   });
 
   for (const delivery of due) {
-    const endpoint = delivery.endpoint;
     result.attempted += 1;
     const attempt = delivery.attempts + 1;
     const body = JSON.stringify(delivery.payload);
     const ts = Math.floor(now.getTime() / 1000);
 
-    if (endpoint.status === 'disabled') {
+    // `webhook_endpoint` is RLS-protected (FORCE). This runs outside any tenant
+    // context, so every read/write of it goes through the delivery's own org.
+    const endpoint = await withOrgContext(
+      delivery.organizationId,
+      (db) => db.webhookEndpoint.findUnique({ where: { id: delivery.endpointId } }),
+      prisma,
+    );
+    if (!endpoint || endpoint.status === 'disabled') {
       await prisma.webhookDelivery.update({
         where: { id: delivery.id },
-        data: { status: 'failed', error: 'endpoint disabled', nextAttemptAt: null },
+        data: {
+          status: 'failed',
+          error: endpoint ? 'endpoint disabled' : 'endpoint missing',
+          nextAttemptAt: null,
+        },
       });
       result.failed += 1;
       continue;
@@ -676,41 +686,51 @@ export async function dispatchDueWebhookDeliveries(
           ? 'dead'
           : 'failed';
 
-    await prisma.webhookDelivery.update({
-      where: { id: delivery.id },
-      data: {
-        status: nextStatus,
-        attempts: attempt,
-        lastAttemptAt: now,
-        nextAttemptAt: nextStatus === 'pending' ? webhookNextAttemptAt(attempt + 1, now) : null,
-        responseStatus: status || null,
-        responseBody: responseBody || null,
-        error,
-      },
-    });
+    // Persist the delivery outcome and the endpoint health together, in a short
+    // transaction scoped to the delivery's org (no external I/O inside it).
+    await withOrgContext(
+      delivery.organizationId,
+      async (db) => {
+        await db.webhookDelivery.update({
+          where: { id: delivery.id },
+          data: {
+            status: nextStatus,
+            attempts: attempt,
+            lastAttemptAt: now,
+            nextAttemptAt:
+              nextStatus === 'pending' ? webhookNextAttemptAt(attempt + 1, now) : null,
+            responseStatus: status || null,
+            responseBody: responseBody || null,
+            error,
+          },
+        });
 
-    if (ok) {
-      result.succeeded += 1;
-      await prisma.webhookEndpoint.update({
-        where: { id: endpoint.id },
-        data: { lastSuccessAt: now, consecutiveFailures: 0 },
-      });
-    } else {
-      if (nextStatus === 'dead') result.dead += 1;
-      else result.failed += 1;
-      const failures = endpoint.consecutiveFailures + 1;
-      await prisma.webhookEndpoint.update({
-        where: { id: endpoint.id },
-        data: {
-          lastFailureAt: now,
-          consecutiveFailures: failures,
-          status:
-            failures >= WEBHOOK_AUTO_DISABLE_THRESHOLD && endpoint.status === 'active'
-              ? 'disabled'
-              : undefined,
-        },
-      });
-    }
+        if (ok) {
+          await db.webhookEndpoint.update({
+            where: { id: endpoint.id },
+            data: { lastSuccessAt: now, consecutiveFailures: 0 },
+          });
+        } else {
+          const failures = endpoint.consecutiveFailures + 1;
+          await db.webhookEndpoint.update({
+            where: { id: endpoint.id },
+            data: {
+              lastFailureAt: now,
+              consecutiveFailures: failures,
+              status:
+                failures >= WEBHOOK_AUTO_DISABLE_THRESHOLD && endpoint.status === 'active'
+                  ? 'disabled'
+                  : undefined,
+            },
+          });
+        }
+      },
+      prisma,
+    );
+
+    if (ok) result.succeeded += 1;
+    else if (nextStatus === 'dead') result.dead += 1;
+    else result.failed += 1;
   }
 
   return result;

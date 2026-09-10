@@ -38,10 +38,12 @@
   },
   "devDependencies": {
     "@trace/storage": "workspace:*",
+    "@xmldom/xmldom": "^0.9",
     "prisma": "^6.1.0",
     "rimraf": "^6.0.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "xml-crypto": "^6"
   }
 }

@@ -100,6 +100,16 @@ export async function createAuditStream(
     after: { url, filters },
     requestId: args.requestId,
   });
+  // Advance the cursor past the entry we just wrote: a new stream tails future
+  // activity, not its own provisioning event.
+  const headAfter = await db.auditLog.findFirst({
+    where: { organizationId: args.organizationId },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    select: { id: true },
+  });
+  if (headAfter && headAfter.id !== row.cursor) {
+    await db.auditStream.update({ where: { id: row.id }, data: { cursor: headAfter.id } });
+  }
   return { id: row.id, secret };
 }
 

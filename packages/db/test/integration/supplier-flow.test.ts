@@ -75,6 +75,7 @@ run('supplier flow + passport', () => {
             templateVersion: QUESTIONNAIRE_VERSION,
             title: 'Q',
             status: 'submitted',
+            createdByUserId: userA,
             submittedAt: new Date(),
             responses: {
               reporting_period: 'FY2025',

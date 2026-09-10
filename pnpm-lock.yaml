@@ -294,6 +294,9 @@ importers:
       '@trace/storage':
         specifier: workspace:*
         version: link:../storage
+      '@xmldom/xmldom':
+        specifier: ^0.9
+        version: 0.9.12
       prisma:
         specifier: ^6.1.0
         version: 6.19.3(typescript@5.9.3)
@@ -309,6 +312,9 @@ importers:
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.1)
+      xml-crypto:
+        specifier: ^6
+        version: 6.1.2
 
   packages/domain:
     dependencies:
