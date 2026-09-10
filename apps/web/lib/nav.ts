@@ -75,6 +75,7 @@ export const NAV: NavSection[] = [
       { label: 'Security', href: '/settings/security', ready: true },
       { label: 'Single Sign-On', href: '/settings/sso', ready: true },
       { label: 'SAML SSO', href: '/settings/saml', ready: true },
+      { label: 'SCIM Provisioning', href: '/settings/scim', ready: true },
       { label: 'Data & Retention', href: '/settings/data', ready: true },
       { label: 'Usage & Plan', href: '/settings/usage', ready: true },
       { label: 'Audit Streams', href: '/settings/audit-streams', ready: true },

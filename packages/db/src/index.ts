@@ -83,6 +83,34 @@ export type {
   CompleteSamlLoginArgs,
   CompleteSamlLoginResult,
 } from './saml';
+
+export {
+  upsertScimConfig,
+  getScimConfig,
+  rotateScimToken,
+  deleteScimConfig,
+  authenticateScim,
+  scimListUsers,
+  scimGetUser,
+  scimCreateUser,
+  scimReplaceUser,
+  scimPatchUser,
+  scimDeleteUser,
+  scimListGroups,
+  scimGetGroup,
+  scimCreateGroup,
+  scimReplaceGroup,
+  scimPatchGroup,
+  scimDeleteGroup,
+  scimAdminOverview,
+} from './scim';
+export type {
+  ScimConfigInput,
+  ScimConfigView,
+  ScimListResult,
+  ScimGroupWithMembers,
+  ScimAdminOverview,
+} from './scim';
 export type {
   SubscriptionView,
   RecordUsageArgs,

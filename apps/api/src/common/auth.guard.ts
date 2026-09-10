@@ -2,7 +2,7 @@ import { Injectable, type CanActivate, type ExecutionContext } from '@nestjs/com
 import { Reflector } from '@nestjs/core';
 import { AppError, type Permission } from '@trace/shared';
 import { authenticateApiKey, getPrisma, resolveMfaRequirement } from '@trace/db';
-import { resolvePermissions } from '@trace/domain';
+import { API_KEY_PREFIX, resolvePermissions } from '@trace/domain';
 import type { RequestWithContext } from './request-context';
 import { hashToken } from './request-context';
 import { MFA_EXEMPT_KEY, PUBLIC_KEY } from './decorators';
@@ -157,6 +157,9 @@ export class AuthGuard implements CanActivate {
     const presented =
       header ?? (bearer?.toLowerCase().startsWith('bearer ') ? bearer.slice(7).trim() : undefined);
     if (!presented) return undefined;
+    // Only a well-formed TRACE API key engages this path. Other bearer schemes
+    // (e.g. SCIM provisioning tokens) fall through to their own route guard.
+    if (!presented.startsWith(API_KEY_PREFIX)) return undefined;
 
     const key = await authenticateApiKey(getPrisma(), presented);
     if (!key) throw AppError.unauthenticated('auth.invalid_api_key', 'Invalid or expired API key.');

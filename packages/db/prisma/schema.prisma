@@ -153,6 +153,9 @@ model Organization {
   samlProvider       SamlProvider?
   samlLinks          SamlLink[]
   samlLoginRequests  SamlLoginRequest[]
+  scimConfig         ScimConfig?
+  scimUsers          ScimUser[]
+  scimGroups         ScimGroup[]
 
   @@map("organization")
 }
@@ -191,6 +194,7 @@ model User {
   mfa             UserMfa?
   ssoLinks        SsoLink[]
   samlLinks       SamlLink[]
+  scimUsers       ScimUser[]
 
   @@map("user")
 }
@@ -2273,4 +2277,90 @@ model SamlLink {
   @@unique([samlProviderId, nameId])
   @@unique([samlProviderId, userId])
   @@map("saml_link")
+}
+
+// ===========================================================================
+// SCIM 2.0 provisioning (Phase 13g)
+// ===========================================================================
+
+/// Per-organization SCIM 2.0 service-provider connection. The IdP is the SCIM
+/// client; it authenticates with a long-lived bearer token (only `token_hash` is
+/// stored, sha256). `group_role_mapping` maps a SCIM group's displayName (or
+/// externalId) to TRACE role keys; `default_roles` are granted to every
+/// SCIM-provisioned member. RLS-forced.
+model ScimConfig {
+  id               String    @id @default(uuid()) @db.Uuid
+  organizationId   String    @unique @map("organization_id") @db.Uuid
+  enabled          Boolean   @default(false)
+  tokenHash        String?   @map("token_hash")
+  tokenPrefix      String?   @map("token_prefix")
+  defaultRoles     String[]  @map("default_roles")
+  groupRoleMapping Json      @default("{}") @map("group_role_mapping")
+  lastRequestAt    DateTime? @map("last_request_at") @db.Timestamptz(6)
+  createdByUserId  String    @map("created_by_user_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("scim_config")
+}
+
+/// A SCIM `User` resource — the provisioning projection of a `membership`.
+/// `active` mirrors the membership status (active ⇄ suspended). RLS-forced.
+model ScimUser {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  externalId     String?  @map("external_id")
+  userName       String   @map("user_name")
+  active         Boolean  @default(true)
+  givenName      String?  @map("given_name")
+  familyName     String?  @map("family_name")
+  displayName    String?  @map("display_name")
+  raw            Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupLinks   ScimGroupMember[]
+
+  @@unique([organizationId, userName])
+  @@unique([organizationId, externalId])
+  @@unique([organizationId, userId])
+  @@map("scim_user")
+}
+
+/// A SCIM `Group` resource. Membership drives role assignment through
+/// `scim_config.group_role_mapping`. RLS-forced.
+model ScimGroup {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  externalId     String?  @map("external_id")
+  displayName    String   @map("display_name")
+  raw            Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members      ScimGroupMember[]
+
+  @@unique([organizationId, displayName])
+  @@unique([organizationId, externalId])
+  @@map("scim_group")
+}
+
+/// SCIM group ↔ SCIM user join. Not RLS'd (like `membership_role`) — every read
+/// path filters through the RLS'd `scim_group` / `scim_user` parents.
+model ScimGroupMember {
+  scimGroupId String @map("scim_group_id") @db.Uuid
+  scimUserId  String @map("scim_user_id") @db.Uuid
+
+  group ScimGroup @relation(fields: [scimGroupId], references: [id], onDelete: Cascade)
+  user  ScimUser  @relation(fields: [scimUserId], references: [id], onDelete: Cascade)
+
+  @@id([scimGroupId, scimUserId])
+  @@index([scimUserId])
+  @@map("scim_group_member")
 }

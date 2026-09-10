@@ -43,6 +43,7 @@ import { UsageModule } from './modules/usage/usage.module';
 import { AuditStreamsModule } from './modules/audit-streams/audit-streams.module';
 import { OpsModule } from './modules/ops/ops.module';
 import { SsoModule } from './modules/sso/sso.module';
+import { ScimModule } from './modules/scim/scim.module';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { SsoModule } from './modules/sso/sso.module';
     AuditStreamsModule,
     OpsModule,
     SsoModule,
+    ScimModule,
   ],
   providers: [
     CatalogBootstrap,

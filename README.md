@@ -29,6 +29,27 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 13g — SCIM 2.0 provisioning (landed).** On top of Phase 13f: TRACE is a SCIM 2.0
+**service provider** — an identity provider pushes user and group lifecycle over a
+bearer-token REST API instead of TRACE learning about people only at first sign-in. **New
+`@trace/domain/access/scim.ts`** (pure) — the bearer-token generator + constant-time compare,
+`parseScimUser` / `parseScimGroup`, `normalizeScimPatch` and the plain-model patch appliers
+(`add` / `remove` / `replace`, `name.givenName`, the `members[value eq "id"]` selector), the
+resource / list / error serialisers, an `attr eq "value"` filter parser, `count`-clamping
+pagination, and `resolveScimRoleKeys` / `scimManagedRoleKeys`. `@trace/db/scim.ts` adds the
+config CRUD + token rotation (only the sha256 is stored), `authenticateScim`, the SCIM
+`User` / `Group` CRUD, and an internal `reconcileMemberRoles`: a SCIM user is the projection
+of a `membership` (`active` mirrors suspended), a SCIM group grants roles through
+`scim_config.group_role_mapping`, and the reconciler only ever touches the *managed set*
+(default roles ∪ every mapped role) so hand-assigned roles are left alone. New `scim_config`
+/ `scim_user` / `scim_group` / `scim_group_member` tables. The API adds `/scim/v2/:orgSlug`
+Users / Groups / discovery controllers (bearer-authenticated, RFC 7644 error envelope,
+`application/scim+json`) plus `GET/PUT/POST token/DELETE /settings/scim` (`security.manage`).
+Web adds a Settings → SCIM Provisioning screen (base URL, token issue / rotate, the role
+mapping, and a read-only list of provisioned users and groups). Builds, typechecks, lints and
+unit tests are green; the Postgres-dependent integration suites (…, scim) run in CI. A real
+billing provider is the only remaining Phase-13 item — see [docs/roadmap.md](docs/roadmap.md).
+
 **Phase 13f — SAML 2.0 SSO (landed).** On top of Phase 13e: per-organization SAML 2.0
 Web-Browser-SSO with just-in-time provisioning. **New `@trace/domain/access/saml.ts`** (pure) —
 the SP-initiated AuthnRequest + HTTP-Redirect binding (`SAMLResponse = base64(DEFLATE(xml))`),
@@ -48,8 +69,7 @@ membership with the roles from the attribute mapping inside `withOrgContext`. Ne
 redirect to `/login?sso_error=`) and `GET/PUT/DELETE /settings/saml` (`security.manage`). Web
 adds a protocol selector to the login SSO box and a Settings → SAML SSO config screen. Builds,
 typechecks, lints and unit tests are green; the Postgres-dependent integration suites (…,
-saml) run in CI. SCIM and a real billing provider are the only remaining Phase-13 items — see
-[docs/roadmap.md](docs/roadmap.md).
+saml) run in CI.
 
 **Phase 13e — OpenID Connect SSO (landed).** On top of Phase 13d: per-organization OIDC
 sign-in with just-in-time provisioning. **New `@trace/domain/access/oidc.ts`** (pure) —

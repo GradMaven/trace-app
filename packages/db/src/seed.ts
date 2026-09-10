@@ -53,6 +53,8 @@ import {
   upsertControl,
   upsertIdentityProvider,
   upsertSamlProvider,
+  upsertScimConfig,
+  rotateScimToken,
   withOrgContext,
   withPlatformContext,
   writeAuditLog,
@@ -235,6 +237,9 @@ async function main(): Promise<void> {
   await seedSaml();
   console.warn('[seed] Demo SAML identity provider configured (disabled).');
 
+  await seedScim();
+  console.warn('[seed] Demo SCIM connection configured (disabled); token issued.');
+
   console.warn(
     '[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).',
   );
@@ -306,6 +311,31 @@ async function seedSaml(): Promise<void> {
       actorUserId: adminId,
       requestId: 'seed',
     });
+  });
+}
+
+async function seedScim(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const adminId = DEMO.users.admin.id;
+
+  await withOrgContext(orgId, async (db) => {
+    const existing = await db.scimConfig.findUnique({ where: { organizationId: orgId } });
+    if (existing) return;
+    await upsertScimConfig(db, {
+      organizationId: orgId,
+      config: {
+        enabled: false, // demo only — no live IdP is pushing to this workspace
+        defaultRoles: ['esg_analyst'],
+        groupRoleMapping: {
+          'TRACE Admins': ['organization_admin'],
+          Sustainability: ['sustainability_manager'],
+        },
+      },
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
+    // Issue a token so the console shows a prefix; the connection stays disabled.
+    await rotateScimToken(db, { organizationId: orgId, actorUserId: adminId, requestId: 'seed' });
   });
 }
 

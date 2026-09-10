@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
@@ -13,7 +14,10 @@ async function bootstrap(): Promise<void> {
   const env = loadEnv();
   const logger = new Logger('Main');
 
-  const app = await NestFactory.create(AppModule, { cors: false });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { cors: false });
+
+  // SCIM 2.0 clients send `application/scim+json`; parse it as JSON (RFC 7644).
+  app.useBodyParser('json', { type: ['application/json', 'application/scim+json'] });
 
   app.use(cookieParser());
   app.use(helmet());

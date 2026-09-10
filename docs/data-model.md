@@ -918,6 +918,77 @@ saml_link(id, organization_id, user_id, saml_provider_id, name_id,
   `0034_saml_rls`). `saml_login_request` is not RLS'd (relay-state lookup at the
   ACS before any context exists).
 
+### SCIM 2.0 provisioning (Phase 13g)
+
+```
+scim_config(id, organization_id UNIQUE, enabled, token_hash NULL, token_prefix NULL,
+            default_roles text[], group_role_mapping jsonb,
+            last_request_at NULL, created_by_user_id, created_at, updated_at)
+            -- token_hash = sha256 of the bearer token (shown once)
+
+scim_user(id, organization_id, user_id, external_id NULL, user_name, active,
+          given_name NULL, family_name NULL, display_name NULL, raw jsonb,
+          created_at, updated_at,
+          UNIQUE(organization_id, user_name), UNIQUE(organization_id, external_id),
+          UNIQUE(organization_id, user_id))
+          -- the provisioning projection of a `membership`; active ⇄ suspended
+
+scim_group(id, organization_id, external_id NULL, display_name, raw jsonb,
+           created_at, updated_at,
+           UNIQUE(organization_id, display_name), UNIQUE(organization_id, external_id))
+
+scim_group_member(scim_group_id, scim_user_id, PRIMARY KEY(scim_group_id, scim_user_id))
+                  -- pure join, no organization_id (like membership_role) — not RLS'd
+```
+
+- **`@trace/domain/access/scim.ts`** (pure): `generateScimToken()` →
+  `{token: 'scim_'+…, hash, prefix}` + `scimTokenMatches` (constant-time),
+  `parseScimUser` / `parseScimGroup` (from a create / PUT body; primary email =
+  first `emails[].primary`, else `emails[0]`, else the userName if it looks like
+  an email), `normalizeScimPatch` (PatchOp envelope → `{op, path?, value?}[]`,
+  `op` lower-cased ∈ add/remove/replace) + `applyScimUserPatch` /
+  `applyScimGroupPatch` (plain-model appliers — `active`, `userName`,
+  `displayName`, `name.givenName` / `name.familyName`, `emails`, `externalId`;
+  for groups the bare `members` array and the `members[value eq "id"]` selector;
+  unknown paths ignored), `scimUserResource` / `scimGroupResource` /
+  `scimListResponse` / `scimError` (RFC 7644 shapes + `meta.location`),
+  `parseScimFilter` (`attribute eq "value"` only — richer grammar → `null`),
+  `scimPaginationParams` (`startIndex` ≥ 1, `count` clamped to `[0, 200]`,
+  default 100), `resolveScimRoleKeys(defaultRoles, groupRoleMapping, groupKeys)`
+  and `scimManagedRoleKeys` (the union SCIM is allowed to touch), and the
+  `ServiceProviderConfig` / `ResourceTypes` / `Schemas` documents.
+- **`@trace/db/scim.ts`**: `upsertScimConfig` (every mapped role must exist for
+  the org; audit `scim.config_created` / `_updated`), `getScimConfig` (drops
+  `token_hash`, adds `hasToken` / counts), `rotateScimToken` (new sha256 + prefix;
+  audit `scim.token_rotated`), `deleteScimConfig` (also drops `scim_user` /
+  `scim_group`; memberships kept). `authenticateScim(prisma, {orgSlug,
+  bearerToken})` — resolves the org by slug, reads `scim_config` in
+  `withOrgContext`, constant-time token compare, throttled `last_request_at`
+  touch. `scim{List,Get,Create,Replace,Patch,Delete}User` /
+  `scim{List,Get,Create,Replace,Patch,Delete}Group` + `scimAdminOverview`. A
+  create upserts the platform `user` by email, find-or-creates the `membership`
+  (active / suspended from `active`), writes the `scim_user`, then
+  `reconcileMemberRoles`. A PATCH `active:false` (or PUT, or DELETE) suspends the
+  membership; DELETE also removes the `scim_user` row and strips the managed
+  roles. Group membership changes reconcile every affected member.
+  `reconcileMemberRoles` computes the wanted role set
+  (`resolveScimRoleKeys`) and reconciles `membership_role` **only within the
+  managed set** — roles assigned by hand are never removed. Every mutation is
+  audit-logged (`scim.user_provisioned` / `_updated` / `_reactivated` /
+  `_deprovisioned`, `scim.group_created` / `_updated` / `_deleted`).
+- API: `/scim/v2/:orgSlug/{Users,Groups}` full CRUD + `PATCH` + discovery
+  (`ServiceProviderConfig` / `ResourceTypes` / `Schemas`), all `@Public()` +
+  `ScimAuthGuard` (bearer) + `ScimExceptionFilter` (RFC 7644 `Error`) +
+  `application/scim+json`. `ScimConfigController` (`GET` / `PUT` / `POST /token` /
+  `DELETE /settings/scim` — `security.manage`). `AuthGuard`'s API-key path only
+  engages for `trk_` tokens; `main.ts` registers the JSON body parser for
+  `application/scim+json`.
+- RLS: `scim_config` + `scim_user` + `scim_group` are `FORCE` `current_org()`
+  (migration `0036_scim_rls`); the pre-auth flow resolves the org from the URL
+  slug, verifies the token, then `withOrgContext`. `scim_group_member` has no
+  `organization_id` (like `membership_role`) and is not RLS'd — read only through
+  the RLS'd parents.
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant
