@@ -37,3 +37,4 @@ export * from './network/graph';
 export * from './network/pcf';
 export * from './network/scenario';
 export * from './network/benchmark';
+export * from './compliance/filing';

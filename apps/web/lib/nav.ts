@@ -53,6 +53,7 @@ export const NAV: NavSection[] = [
       { label: 'Requirements', href: '/compliance/requirements', ready: true },
       { label: 'Disclosures', href: '/compliance/disclosures', ready: true },
       { label: 'Gaps', href: '/compliance/gaps', ready: true },
+      { label: 'Regulatory Filings', href: '/compliance/filings', ready: true },
     ],
   },
   {

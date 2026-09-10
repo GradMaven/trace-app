@@ -29,6 +29,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { CandidateDatapointsModule } from './modules/candidate-datapoints/candidate-datapoints.module';
 import { TrustModule } from './modules/trust/trust.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
+import { FilingsModule } from './modules/filings/filings.module';
 import { AuditWorkspaceModule } from './modules/audit/audit.module';
 import { CommandCenterModule } from './modules/command-center/command-center.module';
 import { AskModule } from './modules/ask/ask.module';
@@ -71,6 +72,7 @@ import { ProductsModule } from './modules/products/products.module';
     CandidateDatapointsModule,
     TrustModule,
     ComplianceModule,
+    FilingsModule,
     AuditWorkspaceModule,
     CommandCenterModule,
     AskModule,

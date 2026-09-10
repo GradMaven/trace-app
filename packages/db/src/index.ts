@@ -268,6 +268,14 @@ export type {
 } from './benchmark';
 
 export {
+  generateRegulatoryFiling,
+  listRegulatoryFilings,
+  regulatoryFilingById,
+  latestRegulatoryFiling,
+} from './filing';
+export type { FilingDeps, RegulatoryFilingRow, GenerateFilingResult } from './filing';
+
+export {
   createProduct,
   updateProduct,
   archiveProduct,

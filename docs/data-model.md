@@ -1278,6 +1278,58 @@ pcf_record(id, organization_id, product_id, version, method_version, boundary,
 - RLS: `product` + `bom_line` + `pcf_record` are `FORCE` `current_org()`
   (migration `0042_pcf_rls`).
 
+### Regulatory-filing export (Phase 15)
+
+```
+regulatory_filing(id, organization_id, regulation_key, rule_store_version,
+                  reporting_period, format_version, version int, readiness,
+                  required_datapoints int, reported_datapoints int, gap_count int,
+                  sha256, storage_key, html_storage_key, storage_driver,
+                  summary jsonb, supersedes_id NULL, generated_by_user_id NULL,
+                  generated_at,
+                  UNIQUE(organization_id, regulation_key, reporting_period, version))
+  -- immutable per generate; `summary` = {stats, gaps, blockers, readiness};
+  -- the full assembled document (JSON) + the tagged HTML live in object storage
+  -- at filings/<org>/<sha256>/filing.{json,html}
+```
+
+- **`@trace/domain/compliance/filing.ts`** (pure): `FILING_FORMAT_VERSION =
+  'esrs-filing@1.0.0'`, `FILING_DISCLAIMER`. `classifyFilingDatapoint(rd)` →
+  `{resolution: reported|flagged|gap, reasons}` — `gap` when there is no mapping,
+  no value, `trustScore` below the datapoint's `minTrustScore`, or every linked
+  evidence row is `rejected`/`expired`/`superseded`; `flagged` when resolved with
+  acceptable evidence but the mapping is `review_required` or not `confirmed`;
+  `reported` only for a confirmed `mapping_complete` above trust with evidence.
+  `assembleFiling(input)` → `RegulatoryFiling` — walks requirements → disclosures
+  → required datapoints, rolls up `stats {requiredDatapoints, reported, flagged,
+  gaps, evidenceItems, disclosures, disclosuresComplete}`, `gaps[]`, `blockers[]`,
+  and `readiness` = `ready` iff `gaps.length === 0 && flagged === 0 &&
+  auditChainIntact` else `blocked`; `digest = sha256(canonicalJson(body))`.
+  `renderFilingHtml(filing)` → deterministic HTML, every datapoint wrapped in
+  `data-datapoint` / `data-metric` / `data-unit` / `data-trust` / `data-min-trust`
+  / `data-resolution` / `data-value`, evidence as `data-evidence-*`, lineage as
+  `data-lineage` — never emits "is compliant".
+- **`@trace/db/filing.ts`**: `generateRegulatoryFiling(db, deps, args)` — resolves
+  the reporting period (arg → `organization.reportingPeriodConfig.activePeriod` →
+  `FY<lastYear>`); loads `regulation` for `rule_store_version` (+ `key` when
+  given) with its requirements → disclosures → required datapoints + evidence
+  requirements, throwing `filing.rule_store_not_loaded` when absent; loads the
+  Phase-7 `compliance_mapping` rows for the version + their `evidence` rows +
+  the `disclosure_status_record` statuses; runs `verifyAuditChain`; calls
+  `assembleFiling` + `renderFilingHtml`; `deps.putBytes` (injected, as in
+  `generateAuditPackage`) writes the JSON + HTML under
+  `filings/<org>/<digest>/filing.{json,html}`; inserts the next
+  `regulatory_filing` version (`supersedes_id` = the previous row for the same
+  `(org, regulation_key, reporting_period)`); audit `filing.generated`.
+  `listRegulatoryFilings` / `regulatoryFilingById` / `latestRegulatoryFiling`.
+- API: `FilingsController` — `GET /filings` + `GET /filings/:id`
+  (`compliance.read`; `:id` returns the row + the document re-read from storage),
+  `POST /filings/generate` (`compliance.manage`), `GET /filings/:id/download?format=json|html`
+  (`compliance.read`; a 300 s signed URL).
+- RLS: `regulatory_filing` is `FORCE` `current_org()` (migration
+  `0047_regulatory_filing_rls`). No new permission — it reuses `compliance.read` /
+  `compliance.manage`.
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

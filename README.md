@@ -29,6 +29,26 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 15 — Regulatory-filing export (landed).** Turns the Phase-7 compliance data and the
+Phase-8 audit chain into a structured regulator submission: an ESRS/CSRD-style disclosure
+document, datapoint-by-datapoint, each figure carrying its lineage, trust score and evidence
+refs, plus a completeness/gap report and a hard **"do not file" guard**. **New
+`@trace/domain/compliance/filing.ts`** (pure) — `classifyFilingDatapoint` resolves each
+required datapoint to `reported` / `flagged` / `gap` (a gap is no mapping, no value, trust
+below the datapoint's floor, or no acceptable evidence; flagged is resolved-but-awaiting a
+human); `assembleFiling` rolls those into a tree with `stats`, `gaps[]`, `blockers[]` and a
+`readiness` that is `ready` **only** with zero gaps, zero flagged datapoints, **and** a
+verifying audit-log chain; `renderFilingHtml` emits a deterministic `data-*`-tagged HTML
+rendering (the seam for an iXBRL/ESEF pass) and never asserts "compliant". `@trace/db/filing.ts`
+gathers the rule store + mappings + chain check, content-addresses the JSON and HTML to object
+storage, and writes an immutable versioned `regulatory_filing` row + a `filing.generated`
+audit entry. The API adds `GET /filings`, `POST /filings/generate`, `GET /filings/:id` and
+`GET /filings/:id/download?format=json|html`; Web adds a Compliance → Regulatory Filings
+screen (readiness banner, gap report, disclosure tree, JSON/HTML download). Builds, typechecks,
+lints and unit tests are green; the Postgres-dependent integration suites (…, filing) run in
+CI. See [docs/roadmap.md](docs/roadmap.md) and
+[ADR-024](docs/decisions/ADR-024-regulatory-filing-export.md).
+
 **Phase 14d — Cross-tenant benchmarking (landed).** The last Carbon Twin slice, and the one
 feature that reads across tenants — reconciled with RLS isolation as follows. An org
 self-declares a coarse **sector** and **opts in**; a platform job reads the opted-in orgs from

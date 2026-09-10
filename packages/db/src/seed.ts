@@ -26,6 +26,7 @@ import {
   ensurePermissionCatalog,
   ensurePlatformRole,
   generateAuditPackage,
+  generateRegulatoryFiling,
   getPrisma,
   promoteCandidate,
   provisionOrganization,
@@ -264,6 +265,8 @@ async function main(): Promise<void> {
   await seedBenchmark();
   console.warn('[seed] Demo org opted in to benchmarking (buckets suppressed — need ≥5 peers).');
 
+  await seedFilings();
+
   console.warn(
     '[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).',
   );
@@ -378,6 +381,41 @@ async function seedBenchmark(): Promise<void> {
   // Build the buckets from whoever has opted in (just the demo org here — every
   // bucket will be `suppressed` until real peers exist).
   await refreshBenchmarkBuckets(getPrisma());
+}
+
+async function seedFilings(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const adminId = DEMO.users.admin.id;
+
+  const storage = createStorageService({
+    driver: 'local',
+    dir: process.env.STORAGE_LOCAL_DIR ?? '.data/documents',
+    signingSecret:
+      process.env.STORAGE_SIGNING_SECRET ?? 'dev-only-storage-signing-secret-change-me',
+    apiPublicUrl: process.env.API_PUBLIC_URL ?? 'http://localhost:4000',
+  });
+
+  await withOrgContext(orgId, async (db) => {
+    const filing = await generateRegulatoryFiling(
+      db,
+      {
+        driver: 'local',
+        putBytes: (key, bytes, contentType) => storage.put({ key, body: bytes, contentType }),
+      },
+      {
+        organizationId: orgId,
+        reportingPeriod: 'FY2025',
+        ruleStoreVersion: RULE_STORE_VERSION,
+        generatedByUserId: adminId,
+        requestId: 'seed',
+      },
+    );
+    console.warn(
+      `[seed] Regulatory filing v${filing.version} assembled — ${filing.readiness} ` +
+        `(${filing.summary.stats.reported}/${filing.summary.stats.requiredDatapoints} reported, ` +
+        `${filing.gapCount} gaps).`,
+    );
+  });
 }
 
 async function seedNetworkScenario(): Promise<void> {

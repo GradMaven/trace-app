@@ -169,6 +169,7 @@ model Organization {
   products           Product[]
   bomLines           BomLine[]
   pcfRecords         PcfRecord[]
+  regulatoryFilings  RegulatoryFiling[]
 
   @@map("organization")
 }
@@ -2549,6 +2550,46 @@ model BenchmarkBucket {
   @@unique([sector, metric, period])
   @@index([sector, period])
   @@map("benchmark_bucket")
+}
+
+// ===========================================================================
+// Regulatory-filing export (Phase 15)
+// ===========================================================================
+
+/// An immutable, versioned, content-addressed regulatory disclosure document
+/// (ESRS/CSRD-style), assembled from the versioned rule store + Phase-7
+/// compliance mappings + the Phase-8 audit-chain check. The full filing JSON +
+/// tagged HTML live in object storage; this row keeps the summary + pointers.
+/// `readiness = 'blocked'` when required datapoints are missing / unverified or
+/// the audit chain does not verify. RLS-forced.
+model RegulatoryFiling {
+  id                 String   @id @default(uuid()) @db.Uuid
+  organizationId     String   @map("organization_id") @db.Uuid
+  regulationKey      String   @map("regulation_key")
+  ruleStoreVersion   String   @map("rule_store_version")
+  reportingPeriod    String   @map("reporting_period")
+  formatVersion      String   @map("format_version")
+  version            Int
+  readiness          String
+  requiredDatapoints Int      @map("required_datapoints")
+  reportedDatapoints Int      @map("reported_datapoints")
+  gapCount           Int      @map("gap_count")
+  sha256             String
+  storageKey         String   @map("storage_key")
+  htmlStorageKey     String   @map("html_storage_key")
+  storageDriver      String   @map("storage_driver")
+  summary            Json
+  supersedesId       String?  @map("supersedes_id") @db.Uuid
+  generatedByUserId  String?  @map("generated_by_user_id") @db.Uuid
+  generatedAt        DateTime @default(now()) @map("generated_at") @db.Timestamptz(6)
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supersedes   RegulatoryFiling?  @relation("FilingVersion", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy RegulatoryFiling[] @relation("FilingVersion")
+
+  @@unique([organizationId, regulationKey, reportingPeriod, version], map: "regulatory_filing_org_reg_period_version_key")
+  @@index([organizationId, generatedAt])
+  @@map("regulatory_filing")
 }
 
 // ===========================================================================
