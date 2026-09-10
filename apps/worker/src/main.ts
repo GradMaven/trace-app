@@ -8,6 +8,7 @@ import { runWebhookDispatchPass } from './processors/webhook-dispatch';
 import { runRetentionSweep } from './processors/retention';
 import { runUsageRollForward } from './processors/usage';
 import { beatWorkerHeartbeat, runAuditStreamDispatch } from './processors/audit-stream';
+import { runBenchmarkRefresh } from './processors/benchmark';
 
 const env = loadEnv();
 const log = pino({ level: env.LOG_LEVEL, name: 'worker' });
@@ -145,6 +146,27 @@ const auditStreamTimer = setInterval(() => {
 }, AUDIT_STREAM_INTERVAL_MS);
 auditStreamTimer.unref();
 
+// Cross-tenant benchmark buckets (Phase 14d): rebuild k-anonymised sector
+// aggregates from the opted-in orgs. Daily.
+const BENCHMARK_INTERVAL_MS = 24 * 60 * 60_000;
+let benchmarkRunning = false;
+const benchmarkTimer = setInterval(() => {
+  if (benchmarkRunning) return;
+  benchmarkRunning = true;
+  runBenchmarkRefresh()
+    .then((r) => log.info(r, 'benchmark buckets refreshed'))
+    .catch((err) =>
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'benchmark refresh failed',
+      ),
+    )
+    .finally(() => {
+      benchmarkRunning = false;
+    });
+}, BENCHMARK_INTERVAL_MS);
+benchmarkTimer.unref();
+
 // Liveness beacon for /health/detailed and /metrics.
 const HEARTBEAT_INTERVAL_MS = 30_000;
 void beatWorkerHeartbeat();
@@ -157,6 +179,7 @@ async function shutdown(signal: string): Promise<void> {
   clearInterval(retentionTimer);
   clearInterval(usageTimer);
   clearInterval(auditStreamTimer);
+  clearInterval(benchmarkTimer);
   clearInterval(heartbeatTimer);
   await Promise.all([notificationsWorker.close(), documentWorker.close()]);
   await Promise.all([notificationsQueue.close(), documentProcessingQueue.close()]);

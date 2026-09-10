@@ -38,6 +38,8 @@ import {
   addBomLine,
   computePcf,
   runNetworkScenario,
+  setBenchmarkSettings,
+  refreshBenchmarkBuckets,
   loadRuleStore,
   runAskQuery,
   runProcurementScenario,
@@ -259,6 +261,9 @@ async function main(): Promise<void> {
   await seedProducts();
   console.warn('[seed] Demo product carbon footprint computed (v1).');
 
+  await seedBenchmark();
+  console.warn('[seed] Demo org opted in to benchmarking (buckets suppressed — need ≥5 peers).');
+
   console.warn(
     '[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).',
   );
@@ -356,6 +361,23 @@ async function seedScim(): Promise<void> {
     // Issue a token so the console shows a prefix; the connection stays disabled.
     await rotateScimToken(db, { organizationId: orgId, actorUserId: adminId, requestId: 'seed' });
   });
+}
+
+async function seedBenchmark(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const adminId = DEMO.users.admin.id;
+  await withOrgContext(orgId, (db) =>
+    setBenchmarkSettings(db, {
+      organizationId: orgId,
+      sector: 'manufacturing',
+      optIn: true,
+      actorUserId: adminId,
+      requestId: 'seed',
+    }),
+  );
+  // Build the buckets from whoever has opted in (just the demo org here — every
+  // bucket will be `suppressed` until real peers exist).
+  await refreshBenchmarkBuckets(getPrisma());
 }
 
 async function seedNetworkScenario(): Promise<void> {

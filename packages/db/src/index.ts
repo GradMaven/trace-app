@@ -254,6 +254,20 @@ export type {
 } from './network';
 
 export {
+  getBenchmarkSettings,
+  setBenchmarkSettings,
+  orgBenchmarkContribution,
+  refreshBenchmarkBuckets,
+  benchmarkComparison,
+  benchmarkPeriod,
+} from './benchmark';
+export type {
+  BenchmarkSettingsView,
+  BenchmarkRefreshResult,
+  BenchmarkComparisonView,
+} from './benchmark';
+
+export {
   createProduct,
   updateProduct,
   archiveProduct,

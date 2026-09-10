@@ -103,6 +103,10 @@ model Organization {
   requireMfa            Boolean            @default(false) @map("require_mfa")
   /// When true, retention `apply` runs are refused for this org (Phase 13b).
   legalHold            Boolean            @default(false) @map("legal_hold")
+  /// Coarse self-declared sector for cross-tenant benchmarking (Phase 14d).
+  sector               String?
+  /// When true, this org's anonymised data-quality ratios feed the sector buckets.
+  benchmarkOptIn       Boolean            @default(false) @map("benchmark_opt_in")
   createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -2522,6 +2526,29 @@ model NetworkScenario {
 
   @@index([organizationId, createdAt])
   @@map("network_scenario")
+}
+
+/// A k-anonymised cross-tenant benchmark aggregate (Phase 14d). Global — NO
+/// `organization_id`, no RLS: a bucket carries only sector-level statistics and
+/// is `suppressed` (all stats null) until it has ≥ `BENCHMARK_K_ANON`
+/// contributors. Refreshed by a platform job that iterates opted-in orgs.
+model BenchmarkBucket {
+  id           String   @id @default(uuid()) @db.Uuid
+  sector       String
+  metric       String
+  period       String
+  contributors Int
+  suppressed   Boolean  @default(false)
+  p25          Decimal? @db.Decimal(12, 4)
+  median       Decimal? @db.Decimal(12, 4)
+  p75          Decimal? @db.Decimal(12, 4)
+  min          Decimal? @db.Decimal(12, 4)
+  max          Decimal? @db.Decimal(12, 4)
+  computedAt   DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  @@unique([sector, metric, period])
+  @@index([sector, period])
+  @@map("benchmark_bucket")
 }
 
 // ===========================================================================

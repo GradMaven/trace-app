@@ -1,22 +1,30 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { AppError } from '@trace/shared';
+import { BENCHMARK_SECTORS } from '@trace/domain';
 import {
+  benchmarkComparison,
   carbonGraphByVersion,
   carbonGraphNodeTrace,
   computeCarbonGraph,
   deleteSupplyChainEdge,
+  getBenchmarkSettings,
   getContext,
+  getPrisma,
   latestCarbonGraph,
   listCarbonGraphSnapshots,
   listNetworkScenarios,
   listSupplyChainEdges,
   networkScenarioById,
   previewNetworkScenario,
+  refreshBenchmarkBuckets,
   runNetworkScenario,
+  setBenchmarkSettings,
   upsertSupplyChainEdge,
   withOrgContext,
+  type BenchmarkComparisonView,
+  type BenchmarkSettingsView,
   type CarbonGraphNodeTrace,
   type CarbonGraphSnapshotView,
   type NetworkScenarioView,
@@ -55,6 +63,11 @@ const scenarioPreviewSchema = z.object({
 const scenarioSaveSchema = scenarioPreviewSchema.extend({
   name: z.string().trim().min(1).max(160),
   description: z.string().trim().max(2000).optional(),
+});
+
+const benchmarkSettingsSchema = z.object({
+  sector: z.enum(BENCHMARK_SECTORS).nullable().optional(),
+  optIn: z.boolean(),
 });
 
 @ApiTags('network')
@@ -231,5 +244,55 @@ export class NetworkController {
   ): Promise<NetworkScenarioView> {
     const org = actor.organizationId!;
     return withOrgContext(org, (db) => networkScenarioById(db, org, id));
+  }
+
+  // ---- cross-tenant benchmarking ---------------------------------------
+
+  @Get('benchmark/settings')
+  @RequirePermission('network.manage')
+  @ApiOperation({ summary: 'The org’s benchmarking sector + opt-in status.' })
+  benchmarkSettings(
+    @CurrentActor() actor: AuthenticatedActor,
+  ): Promise<BenchmarkSettingsView & { sectors: readonly string[] }> {
+    const org = actor.organizationId!;
+    return withOrgContext(org, (db) => getBenchmarkSettings(db, org)).then((s) => ({
+      ...s,
+      sectors: BENCHMARK_SECTORS,
+    }));
+  }
+
+  @Put('benchmark/settings')
+  @RequirePermission('network.manage')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Set the sector and opt in / out of anonymised benchmarking.' })
+  async setBenchmark(
+    @Body(new ZodPipe(benchmarkSettingsSchema)) body: z.infer<typeof benchmarkSettingsSchema>,
+    @CurrentActor() actor: AuthenticatedActor,
+  ): Promise<void> {
+    const org = actor.organizationId!;
+    await withOrgContext(org, (db) =>
+      setBenchmarkSettings(db, {
+        organizationId: org,
+        sector: body.sector ?? null,
+        optIn: body.optIn,
+        actorUserId: actor.userId,
+        requestId: this.rid(),
+      }),
+    );
+  }
+
+  @Get('benchmark')
+  @RequirePermission('supplier.read')
+  @ApiOperation({ summary: 'This org’s data-quality ratios vs the anonymised sector aggregate.' })
+  benchmark(@CurrentActor() actor: AuthenticatedActor): Promise<BenchmarkComparisonView> {
+    const org = actor.organizationId!;
+    return withOrgContext(org, (db) => benchmarkComparison(db, org));
+  }
+
+  @Post('benchmark/refresh')
+  @RequirePermission('platform.admin')
+  @ApiOperation({ summary: 'Rebuild the k-anonymised benchmark buckets (platform operators).' })
+  refreshBenchmark(): Promise<Awaited<ReturnType<typeof refreshBenchmarkBuckets>>> {
+    return refreshBenchmarkBuckets(getPrisma());
   }
 }

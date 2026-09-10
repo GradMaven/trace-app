@@ -29,6 +29,25 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 14d — Cross-tenant benchmarking (landed).** The last Carbon Twin slice, and the one
+feature that reads across tenants — reconciled with RLS isolation as follows. An org
+self-declares a coarse **sector** and **opts in**; a platform job reads the opted-in orgs from
+the (non-RLS) `organization` table and computes each one's **data-quality ratios**
+(supplier-specific data share, evidence-backed share, PCF primary-data share) **through that
+org's own tenant context** — nothing bypasses a policy. It writes **k-anonymized sector
+buckets** to a global `benchmark_bucket` table that has no `organization_id`: a `(sector,
+metric, period)` bucket stores no numbers at all until it has ≥ 5 contributors. **New
+`@trace/domain/network/benchmark.ts`** (pure) — `computeBenchmarkBuckets` (grouping +
+suppression + nearest-rank quartiles) and `compareToBenchmark` (ahead / in line / behind the
+median). `@trace/db/benchmark.ts` adds the per-org settings, the contribution calc, the
+`refreshBenchmarkBuckets` job, and `benchmarkComparison` (returns only the sector aggregate +
+the caller's own value). New `benchmark_bucket` table and `organization.sector` /
+`benchmark_opt_in`. The API adds `GET/PUT /network/benchmark/settings`, `GET
+/network/benchmark`, and `POST /network/benchmark/refresh` (`platform.admin`); the worker
+runs the refresh daily. Web adds a Supply Chain → Benchmark screen. Builds, typechecks, lints
+and unit tests are green; the Postgres-dependent integration suites (…, benchmark) run in CI.
+**Phase 14 (the Carbon Twin) is now feature-complete** — see [docs/roadmap.md](docs/roadmap.md).
+
 **Phase 14c — Network scenario engine (landed).** The third Phase-14 slice: what-ifs over the
 14a supply-chain carbon graph. **New `@trace/domain/network/scenario.ts`** (pure) —
 `applyNetworkScenario` deep-copies the baseline node/edge inputs, applies a set of
@@ -44,8 +63,7 @@ readers. New `network_scenario` table. The API adds `POST /network/scenarios/pre
 `POST /network/scenarios` (`network.manage`) and the two `supplier.read` reads. Web adds a
 Supply Chain → Network Scenarios screen with a graph-driven intervention builder, a preview,
 and the saved-scenario list. Builds, typechecks, lints and unit tests are green; the
-Postgres-dependent integration suites (…, network-scenario) run in CI. Cross-tenant
-benchmarking is the last remaining Phase-14 item — see [docs/roadmap.md](docs/roadmap.md).
+Postgres-dependent integration suites (…, network-scenario) run in CI.
 
 **Phase 14b — Product carbon footprints (landed).** The second Phase-14 slice: cradle-to-gate
 **product carbon footprints (PCF)** from a bill of materials. **New

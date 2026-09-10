@@ -32,6 +32,7 @@ export const NAV: NavSection[] = [
       { label: 'Carbon Map', href: '/supply-chain/carbon-map', ready: true },
       { label: 'Carbon Twin', href: '/supply-chain/carbon-twin', ready: true },
       { label: 'Network Scenarios', href: '/supply-chain/carbon-twin/scenarios', ready: true },
+      { label: 'Benchmark', href: '/supply-chain/carbon-twin/benchmark', ready: true },
       { label: 'Procurement Scenarios', href: '/supply-chain/carbon-map/scenarios', ready: true },
     ],
   },

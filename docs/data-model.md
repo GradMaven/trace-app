@@ -1162,6 +1162,55 @@ network_scenario(id, organization_id, name, description, engine_version,
 - RLS: `network_scenario` is `FORCE` `current_org()` (migration
   `0044_network_scenario_rls`).
 
+### Cross-tenant benchmarking (Phase 14d)
+
+```
+organization(… , sector text NULL, benchmark_opt_in bool default false)
+
+benchmark_bucket(id, sector, metric, period, contributors, suppressed default false,
+                 p25 NULL, median NULL, p75 NULL, min NULL, max NULL, computed_at,
+                 UNIQUE(sector, metric, period))
+                 -- GLOBAL: no organization_id, no RLS. Every row is a k-anonymised
+                 -- sector aggregate; all stats are NULL until contributors >= 5.
+```
+
+- **`@trace/domain/network/benchmark.ts`** (pure): `BENCHMARK_K_ANON = 5`,
+  `BENCHMARK_METRICS` (`primary_data_share_pct` / `evidence_backed_pct` /
+  `pcf_primary_data_share_pct` — all 0–100, higher-is-better), `BENCHMARK_SECTORS`,
+  `isBenchmarkMetric` / `isBenchmarkSector`. `BenchmarkContribution {sector,
+  values: Partial<Record<BenchmarkMetric, number>>}`. `computeBenchmarkBuckets(
+  contributions, {period, kAnon?})` → `BenchmarkBucketStat[]` — groups by
+  `(sector, metric)`; `n < k` → `{suppressed: true, all stats null}`; else
+  nearest-rank `p25` / `median` / `p75` + `min` / `max`. `compareToBenchmark(own,
+  bucket, metric)` → `{standing: 'ahead' | 'in_line' | 'behind' | 'unknown',
+  positionPct}` — `own − median` beyond ±3 → ahead / behind, else in line;
+  `positionPct` is `own`'s position in `[min, max]`; `unknown` when the bucket is
+  missing or suppressed.
+- **`@trace/db/benchmark.ts`**: `getBenchmarkSettings` / `setBenchmarkSettings`
+  (sector must be in `BENCHMARK_SECTORS`; opt-in without a sector →
+  `benchmark.sector_required`; audit `benchmark.settings_updated`).
+  `orgBenchmarkContribution(db, org)` — `primary_data_share_pct` from
+  `carbon_graph_snapshot.attributed_pct`, `evidence_backed_pct` from
+  `data.graph.totals.evidenceBackedPct`, `pcf_primary_data_share_pct` from the
+  mean of the latest `pcf_record.primary_data_share_pct` per product; null if the
+  org has no sector or no data. `refreshBenchmarkBuckets(prisma, {period?})` —
+  reads the **non-RLS `organization`** table for `benchmark_opt_in = true`,
+  computes each contribution through that org's own `withOrgContext` (the
+  platform context can't read RLS-`FORCE` tables — `current_org()` is NULL
+  there), `computeBenchmarkBuckets`, upserts `benchmark_bucket` on `(sector,
+  metric, period)`. `benchmarkComparison(db, org, period?)` → `{eligible, reason,
+  sector, optIn, period, contributors, metrics: BenchmarkComparison[]}` — the
+  caller's own values (from its own context) vs the sector bucket rows; never a
+  row-level cross-tenant read. `benchmarkPeriod(now)` → `YYYY-Www`.
+- API: `NetworkController` — `GET` / `PUT /network/benchmark/settings`
+  (`network.manage`), `GET /network/benchmark` (`supplier.read`), `POST
+  /network/benchmark/refresh` (`platform.admin`). Worker: a daily
+  `runBenchmarkRefresh`.
+- RLS: **none added.** `benchmark_bucket` is global by design; `organization`
+  (which gained the two columns) is not RLS'd. Isolation holds because the only
+  cross-tenant read is the refresh job's per-org loop, and its output is
+  anonymised + threshold-suppressed (migration `0045_benchmark`, no `_rls` pair).
+
 ### Product carbon footprints (Phase 14b)
 
 ```
