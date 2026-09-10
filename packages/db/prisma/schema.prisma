@@ -156,6 +156,9 @@ model Organization {
   scimConfig         ScimConfig?
   scimUsers          ScimUser[]
   scimGroups         ScimGroup[]
+  billingConfig      BillingConfig?
+  billingEvents      BillingEvent[]
+  billingCheckouts   BillingCheckout[]
 
   @@map("organization")
 }
@@ -2363,4 +2366,69 @@ model ScimGroupMember {
   @@id([scimGroupId, scimUserId])
   @@index([scimUserId])
   @@map("scim_group_member")
+}
+
+// ===========================================================================
+// Billing-provider integration (Phase 13h)
+// ===========================================================================
+
+/// Per-organization billing-provider connection (Stripe-shaped). `secret_key`
+/// and `webhook_secret` are stored to call the provider and to verify inbound
+/// webhook signatures (should be encrypted at rest in production, like
+/// `webhook_endpoint.secret`). `price_to_plan` maps a provider price id to a
+/// TRACE plan key. RLS-forced.
+model BillingConfig {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @unique @map("organization_id") @db.Uuid
+  provider        String   @default("stripe")
+  enabled         Boolean  @default(false)
+  publishableKey  String?  @map("publishable_key")
+  secretKey       String?  @map("secret_key")
+  webhookSecret   String?  @map("webhook_secret")
+  priceToPlan     Json     @default("{}") @map("price_to_plan")
+  customerId      String?  @map("customer_id")
+  subscriptionRef String?  @map("subscription_ref")
+  createdByUserId String   @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("billing_config")
+}
+
+/// One received provider webhook event. `provider_event_id` is globally unique →
+/// idempotent processing. System-written; not RLS'd (carries `organization_id`,
+/// read paths filter on it — like `webhook_delivery`).
+model BillingEvent {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  providerEventId String   @unique @map("provider_event_id")
+  type            String
+  status          String   @default("processed")
+  outcome         Json     @default("{}")
+  error           String?
+  receivedAt      DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, receivedAt])
+  @@map("billing_event")
+}
+
+/// A checkout attempt started from the TRACE console. System-written; not RLS'd.
+model BillingCheckout {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  planKey         String    @map("plan_key")
+  providerRef     String?   @map("provider_ref")
+  status          String    @default("pending")
+  createdByUserId String    @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt     DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@map("billing_checkout")
 }

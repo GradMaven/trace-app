@@ -32,3 +32,4 @@ export * from './access/health';
 export * from './access/oidc';
 export * from './access/saml';
 export * from './access/scim';
+export * from './access/billing';

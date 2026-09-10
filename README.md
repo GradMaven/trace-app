@@ -29,6 +29,26 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 13h — Billing provider (landed).** On top of Phase 13g, and the final Phase-13 slice:
+a Stripe-shaped billing integration wired to the Phase-13c plan / quota engine. **New
+`@trace/domain/access/billing.ts`** (pure) — `verifyBillingSignature` (the same
+`t=<unix>,v1=<hmac-sha256>` scheme as outbound webhooks, 300 s tolerance, constant-time),
+`normalizeBillingEvent` (raw Stripe event → a small canonical shape), and
+`billingEventOutcome` (checkout / subscription / payment-failure event + the per-org
+price→plan map → `{planKey?, status?}`; a cancellation falls the org back to the free plan).
+`@trace/db/billing.ts` adds the per-org config CRUD (secret key + webhook signing secret
+stored, never returned), `startCheckout` / `billingPortalUrl` (the two provider network calls
+are an injected `BillingProviderAdapter`, stubbed in CI), and `handleBillingWebhook` —
+verify the signature over the raw body, normalise, **dedupe on `billing_event.provider_event_id`**,
+then `setPlan` + update `subscription.status` inside `withOrgContext`. New `billing_config` /
+`billing_event` / `billing_checkout` tables. The API adds `POST /billing/checkout` +
+`GET /billing/portal` (`billing.manage`) and `POST /billing/webhook/:orgSlug` (`@Public()`,
+reads `req.rawBody`), plus `/settings/billing`; a real `fetch`-based Stripe adapter ships but
+only runs with live keys. Web adds a Settings → Billing screen (current plan, Upgrade /
+Manage billing, the webhook URL + signing secret, a recent-events table). Builds, typechecks,
+lints and unit tests are green; the Postgres-dependent integration suites (…, billing) run in
+CI. **Phase 13 is now feature-complete** — see [docs/roadmap.md](docs/roadmap.md).
+
 **Phase 13g — SCIM 2.0 provisioning (landed).** On top of Phase 13f: TRACE is a SCIM 2.0
 **service provider** — an identity provider pushes user and group lifecycle over a
 bearer-token REST API instead of TRACE learning about people only at first sign-in. **New
@@ -47,8 +67,7 @@ Users / Groups / discovery controllers (bearer-authenticated, RFC 7644 error env
 `application/scim+json`) plus `GET/PUT/POST token/DELETE /settings/scim` (`security.manage`).
 Web adds a Settings → SCIM Provisioning screen (base URL, token issue / rotate, the role
 mapping, and a read-only list of provisioned users and groups). Builds, typechecks, lints and
-unit tests are green; the Postgres-dependent integration suites (…, scim) run in CI. A real
-billing provider is the only remaining Phase-13 item — see [docs/roadmap.md](docs/roadmap.md).
+unit tests are green; the Postgres-dependent integration suites (…, scim) run in CI.
 
 **Phase 13f — SAML 2.0 SSO (landed).** On top of Phase 13e: per-organization SAML 2.0
 Web-Browser-SSO with just-in-time provisioning. **New `@trace/domain/access/saml.ts`** (pure) —

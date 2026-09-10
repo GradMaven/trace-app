@@ -78,6 +78,7 @@ export const NAV: NavSection[] = [
       { label: 'SCIM Provisioning', href: '/settings/scim', ready: true },
       { label: 'Data & Retention', href: '/settings/data', ready: true },
       { label: 'Usage & Plan', href: '/settings/usage', ready: true },
+      { label: 'Billing', href: '/settings/billing', ready: true },
       { label: 'Audit Streams', href: '/settings/audit-streams', ready: true },
       { label: 'Ops & Health', href: '/settings/ops', ready: true },
       { label: 'Organization', href: '/settings/organization' },

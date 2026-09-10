@@ -14,7 +14,12 @@ async function bootstrap(): Promise<void> {
   const env = loadEnv();
   const logger = new Logger('Main');
 
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { cors: false });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    cors: false,
+    // Keep the exact request bytes on `req.rawBody` for billing-webhook
+    // signature verification.
+    rawBody: true,
+  });
 
   // SCIM 2.0 clients send `application/scim+json`; parse it as JSON (RFC 7644).
   app.useBodyParser('json', { type: ['application/json', 'application/scim+json'] });

@@ -51,6 +51,7 @@ import {
   transitionEvidence,
   updateFinding,
   upsertControl,
+  upsertBillingConfig,
   upsertIdentityProvider,
   upsertSamlProvider,
   upsertScimConfig,
@@ -240,6 +241,9 @@ async function main(): Promise<void> {
   await seedScim();
   console.warn('[seed] Demo SCIM connection configured (disabled); token issued.');
 
+  await seedBilling();
+  console.warn('[seed] Demo billing connection configured (disabled).');
+
   console.warn(
     '[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).',
   );
@@ -336,6 +340,29 @@ async function seedScim(): Promise<void> {
     });
     // Issue a token so the console shows a prefix; the connection stays disabled.
     await rotateScimToken(db, { organizationId: orgId, actorUserId: adminId, requestId: 'seed' });
+  });
+}
+
+async function seedBilling(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const adminId = DEMO.users.admin.id;
+
+  await withOrgContext(orgId, async (db) => {
+    const existing = await db.billingConfig.findUnique({ where: { organizationId: orgId } });
+    if (existing) return;
+    await upsertBillingConfig(db, {
+      organizationId: orgId,
+      config: {
+        provider: 'stripe',
+        enabled: false, // demo only — no provider keys, no live webhooks
+        priceToPlan: {
+          price_demo_growth: 'growth',
+          price_demo_enterprise: 'enterprise',
+        },
+      },
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
   });
 }
 

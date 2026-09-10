@@ -111,6 +111,26 @@ export type {
   ScimGroupWithMembers,
   ScimAdminOverview,
 } from './scim';
+
+export {
+  upsertBillingConfig,
+  getBillingConfig,
+  rotateBillingWebhookSecret,
+  deleteBillingConfig,
+  startCheckout,
+  billingPortalUrl,
+  handleBillingWebhook,
+  billingOverview,
+  expireStaleCheckouts,
+} from './billing';
+export type {
+  BillingProviderAdapter,
+  BillingDeps,
+  BillingConfigInput,
+  BillingConfigView,
+  HandleBillingWebhookResult,
+  BillingOverview,
+} from './billing';
 export type {
   SubscriptionView,
   RecordUsageArgs,

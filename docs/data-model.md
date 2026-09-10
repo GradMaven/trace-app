@@ -989,6 +989,76 @@ scim_group_member(scim_group_id, scim_user_id, PRIMARY KEY(scim_group_id, scim_u
   `organization_id` (like `membership_role`) and is not RLS'd — read only through
   the RLS'd parents.
 
+### Billing-provider integration (Phase 13h)
+
+```
+billing_config(id, organization_id UNIQUE, provider default 'stripe', enabled,
+               publishable_key NULL, secret_key NULL, webhook_secret NULL,
+               price_to_plan jsonb, customer_id NULL, subscription_ref NULL,
+               created_by_user_id, created_at, updated_at)
+               -- secret_key + webhook_secret stored plaintext (encrypt at rest)
+
+billing_event(id, organization_id, provider_event_id UNIQUE, type, status,
+              outcome jsonb, error NULL, received_at)
+              -- idempotency ledger; not RLS'd (like webhook_delivery)
+
+billing_checkout(id, organization_id, plan_key, provider_ref NULL,
+                 status default 'pending', created_by_user_id,
+                 created_at, completed_at NULL)   -- not RLS'd
+```
+
+- **`@trace/domain/access/billing.ts`** (pure): `signBillingPayload(secret, ts,
+  body)` / `verifyBillingSignature(secret, header, body, now?)` — `t=<unix>,v1=
+  <hmac-sha256(`<ts>.<body>`)>`, 300 s tolerance, constant-time (the same scheme
+  as the Phase-13a outbound webhooks, under `x-trace-billing-signature`).
+  `generateBillingWebhookSecret()` → `{secret: 'whsec_'+…}`.
+  `normalizeBillingEvent(raw)` — a Stripe event object →
+  `{id, type ('checkout.completed' | 'subscription.updated' | 'subscription.canceled'
+  | 'payment.failed' | 'unknown'), createdAt, priceId, customerId, subscriptionId,
+  sessionId, clientReferenceId, requestedPlanKey (from `metadata.trace_plan`),
+  providerStatus, raw}` | null. `resolvePlanForPrice(priceId, priceToPlan)` /
+  `priceForPlan(planKey, priceToPlan)` (reverse). `billingEventOutcome(event,
+  priceToPlan)` → `{planKey: string | null, status: 'active' | 'past_due' |
+  'canceled' | null, reason}` — checkout → `requestedPlanKey` else the mapped
+  price (`status: active`); `subscription.updated` → mapped price's plan + a
+  provider-status mapping, a `canceled` status → `BILLING_FALLBACK_PLAN` (=
+  `free`); `subscription.canceled` → free + `canceled`; `payment.failed` →
+  `past_due`, no plan change. `invalidPlanKeysInMap(map)`.
+- **`@trace/db/billing.ts`**: `BillingProviderAdapter` (injected) —
+  `createCheckoutSession` / `createPortalSession`. `upsertBillingConfig` (every
+  mapped value must be a known plan key; `secretKey` / `webhookSecret` omitted →
+  keep stored, `''` → clear; first `enabled` with no secret mints one and returns
+  it once; audit `billing.provider_configured` / `_updated`), `getBillingConfig`
+  (`hasSecretKey` / `hasWebhookSecret` — never the values), `rotateBillingWebhookSecret`,
+  `deleteBillingConfig`. `startCheckout(db, {adapter}, {organizationId, planKey,
+  successUrl, cancelUrl, …})` — requires `enabled` + `secret_key` + a price mapped
+  to `planKey`; writes a `billing_checkout` (pending), calls the adapter, stores
+  `provider_ref` + the returned `customer_id`; audit `billing.checkout_started`.
+  `billingPortalUrl(db, {adapter}, {organizationId, returnUrl})` — needs
+  `customer_id`. `handleBillingWebhook(prisma, {orgSlug, signatureHeader, rawBody,
+  requestId})` — resolves the org by slug, reads `billing_config` in
+  `withOrgContext`, `verifyBillingSignature` (→ `billing.bad_signature` 401),
+  `JSON.parse` + `normalizeBillingEvent` (→ `billing.bad_event` 422),
+  **dedupe on `provider_event_id`** (seen → `{handled:false, duplicate:true}`),
+  then `ensureSubscription` + `setPlan` (when `planKey`, actor = the config
+  creator) + `subscription.status` update + record `customer_id` /
+  `subscription_ref` + complete the matching `billing_checkout` + write the
+  `billing_event` row + audit `billing.webhook_processed`. `billingOverview`
+  (config + subscription + last 20 events). `expireStaleCheckouts(prisma,
+  maxAgeMs=1h)` (worker housekeeping).
+- API: `BillingController` — `POST /billing/checkout` + `GET /billing/portal`
+  (session-authed, `billing.manage`, return `{url}` for the SPA), `POST
+  /billing/webhook/:orgSlug` (`@Public()` + `@MfaExempt()`, reads `req.rawBody`
+  — `main.ts` sets `rawBody: true`). `BillingConfigController`
+  (`GET` / `PUT` / `POST /webhook-secret` / `DELETE /settings/billing` —
+  `billing.manage`). `stripe-adapter.ts` — the real `fetch`-based adapter
+  (`/v1/checkout/sessions`, `/v1/billing_portal/sessions`, form-encoded, `Bearer`
+  secret key, 8 s timeout), used only when a live secret key is configured.
+- RLS: `billing_config` is `FORCE` `current_org()` (migration `0038_billing_rls`);
+  the webhook handler resolves the org from the URL slug first, then
+  `withOrgContext`. `billing_event` / `billing_checkout` carry `organization_id`,
+  are not RLS'd (system logs, swept cross-tenant by the worker).
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant
