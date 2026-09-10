@@ -37,6 +37,7 @@ import {
   createProduct,
   addBomLine,
   computePcf,
+  runNetworkScenario,
   loadRuleStore,
   runAskQuery,
   runProcurementScenario,
@@ -252,6 +253,9 @@ async function main(): Promise<void> {
   await seedCarbonTwin();
   console.warn('[seed] Supply-chain carbon graph computed (v1).');
 
+  await seedNetworkScenario();
+  console.warn('[seed] Demo network what-if scenario saved.');
+
   await seedProducts();
   console.warn('[seed] Demo product carbon footprint computed (v1).');
 
@@ -351,6 +355,37 @@ async function seedScim(): Promise<void> {
     });
     // Issue a token so the console shows a prefix; the connection stays disabled.
     await rotateScimToken(db, { organizationId: orgId, actorUserId: adminId, requestId: 'seed' });
+  });
+}
+
+async function seedNetworkScenario(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const adminId = DEMO.users.admin.id;
+
+  await withOrgContext(orgId, async (db) => {
+    if (await db.networkScenario.findFirst({ where: { organizationId: orgId } })) return;
+    const steel = await db.supplier.findFirst({
+      where: { organizationId: orgId, name: { contains: 'Rheinstahl' } },
+      select: { id: true, name: true },
+    });
+    if (!steel) return;
+    await runNetworkScenario(db, {
+      organizationId: orgId,
+      name: `${steel.name} decarbonisation commitment`,
+      description:
+        'Models a 25% cut to the tier-1 steel supplier’s direct emissions against the current graph.',
+      interventions: [
+        {
+          id: 'iv1',
+          kind: 'decarbonize',
+          nodeId: steel.id,
+          reductionPct: 25,
+          label: `${steel.name} −25% direct`,
+        },
+      ],
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
   });
 }
 

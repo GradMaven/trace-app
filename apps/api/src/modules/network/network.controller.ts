@@ -10,11 +10,16 @@ import {
   getContext,
   latestCarbonGraph,
   listCarbonGraphSnapshots,
+  listNetworkScenarios,
   listSupplyChainEdges,
+  networkScenarioById,
+  previewNetworkScenario,
+  runNetworkScenario,
   upsertSupplyChainEdge,
   withOrgContext,
   type CarbonGraphNodeTrace,
   type CarbonGraphSnapshotView,
+  type NetworkScenarioView,
   type SupplyChainEdgeView,
 } from '@trace/db';
 import { CurrentActor, RequirePermission } from '../../common/decorators';
@@ -30,6 +35,26 @@ const edgeSchema = z.object({
   toLabel: z.string().trim().max(200).optional().nullable(),
   relationship: z.string().trim().max(120).optional().nullable(),
   tier: z.number().int().min(1).max(20).optional().nullable(),
+});
+
+const interventionSchema = z.object({
+  id: z.string().trim().min(1).max(64),
+  kind: z.enum(['decarbonize', 'substitute', 'drop_node', 'reroute']),
+  label: z.string().trim().max(200).optional(),
+  nodeId: z.string().trim().max(128).optional(),
+  reductionPct: z.number().min(0).max(100).optional(),
+  newDirectTco2e: z.number().min(0).max(1e12).optional(),
+  fromNodeId: z.string().trim().max(128).optional(),
+  currentToNodeId: z.string().trim().max(128).optional(),
+  newToNodeId: z.string().trim().max(128).optional(),
+});
+const scenarioPreviewSchema = z.object({
+  baseGraphVersion: z.number().int().positive().optional(),
+  interventions: z.array(interventionSchema).min(1).max(30),
+});
+const scenarioSaveSchema = scenarioPreviewSchema.extend({
+  name: z.string().trim().min(1).max(160),
+  description: z.string().trim().max(2000).optional(),
 });
 
 @ApiTags('network')
@@ -147,5 +172,64 @@ export class NetworkController {
         requestId: this.rid(),
       }),
     );
+  }
+
+  // ---- scenario engine ----------------------------------------------------
+
+  @Post('scenarios/preview')
+  @RequirePermission('network.manage')
+  @ApiOperation({ summary: 'Project interventions against the carbon graph (not saved).' })
+  preview(
+    @Body(new ZodPipe(scenarioPreviewSchema)) body: z.infer<typeof scenarioPreviewSchema>,
+    @CurrentActor() actor: AuthenticatedActor,
+  ): Promise<Awaited<ReturnType<typeof previewNetworkScenario>>> {
+    const org = actor.organizationId!;
+    return withOrgContext(org, (db) =>
+      previewNetworkScenario(db, {
+        organizationId: org,
+        baseGraphVersion: body.baseGraphVersion,
+        interventions: body.interventions,
+      }),
+    );
+  }
+
+  @Post('scenarios')
+  @RequirePermission('network.manage')
+  @ApiOperation({ summary: 'Run and save a network what-if scenario.' })
+  runScenario(
+    @Body(new ZodPipe(scenarioSaveSchema)) body: z.infer<typeof scenarioSaveSchema>,
+    @CurrentActor() actor: AuthenticatedActor,
+  ): Promise<{ id: string; result: NetworkScenarioView['result'] }> {
+    const org = actor.organizationId!;
+    return withOrgContext(org, (db) =>
+      runNetworkScenario(db, {
+        organizationId: org,
+        name: body.name,
+        description: body.description,
+        baseGraphVersion: body.baseGraphVersion,
+        interventions: body.interventions,
+        actorUserId: actor.userId,
+        requestId: this.rid(),
+      }),
+    );
+  }
+
+  @Get('scenarios')
+  @RequirePermission('supplier.read')
+  scenarios(
+    @CurrentActor() actor: AuthenticatedActor,
+  ): Promise<Awaited<ReturnType<typeof listNetworkScenarios>>> {
+    const org = actor.organizationId!;
+    return withOrgContext(org, (db) => listNetworkScenarios(db, org));
+  }
+
+  @Get('scenarios/:id')
+  @RequirePermission('supplier.read')
+  scenario(
+    @Param('id') id: string,
+    @CurrentActor() actor: AuthenticatedActor,
+  ): Promise<NetworkScenarioView> {
+    const org = actor.organizationId!;
+    return withOrgContext(org, (db) => networkScenarioById(db, org, id));
   }
 }

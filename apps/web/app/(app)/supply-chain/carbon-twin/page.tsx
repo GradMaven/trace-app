@@ -104,7 +104,10 @@ export default async function CarbonTwinPage() {
           <p className="muted" style={{ marginTop: 4 }}>
             A rolled-up model of the supply chain&apos;s carbon: the organization&apos;s Scope 1
             &amp; 2 at the root, each supplier&apos;s attributed Scope 3 emissions rolled up through
-            declared upstream links, and a Pareto ranking of the hotspots.
+            declared upstream links, and a Pareto ranking of the hotspots.{' '}
+            <Link href="/supply-chain/carbon-twin/scenarios" style={{ color: 'var(--accent)' }}>
+              Run network scenarios →
+            </Link>
           </p>
         </div>
         <CarbonTwinTools

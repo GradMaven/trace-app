@@ -29,6 +29,24 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 14c — Network scenario engine (landed).** The third Phase-14 slice: what-ifs over the
+14a supply-chain carbon graph. **New `@trace/domain/network/scenario.ts`** (pure) —
+`applyNetworkScenario` deep-copies the baseline node/edge inputs, applies a set of
+interventions (**decarbonize** a node by a %, **substitute** its absolute direct emissions,
+**drop** a node and its edges, or **reroute** a declared link), then re-runs the same
+`buildCarbonGraph` + `rankHotspots` so the change propagates up the tree exactly the way the
+real graph rolls up. It returns baseline → projected totals + hotspot counts, the overall
+delta, a per-node delta table, and a log of what each intervention did (an unresolvable
+target is skipped, not an error). `@trace/db/network.ts` adds `previewNetworkScenario`
+(reconstructs the inputs from a stored snapshot — reproducible against a historical version),
+`runNetworkScenario` (persists an immutable `network_scenario`), and the list / detail
+readers. New `network_scenario` table. The API adds `POST /network/scenarios/preview` +
+`POST /network/scenarios` (`network.manage`) and the two `supplier.read` reads. Web adds a
+Supply Chain → Network Scenarios screen with a graph-driven intervention builder, a preview,
+and the saved-scenario list. Builds, typechecks, lints and unit tests are green; the
+Postgres-dependent integration suites (…, network-scenario) run in CI. Cross-tenant
+benchmarking is the last remaining Phase-14 item — see [docs/roadmap.md](docs/roadmap.md).
+
 **Phase 14b — Product carbon footprints (landed).** The second Phase-14 slice: cradle-to-gate
 **product carbon footprints (PCF)** from a bill of materials. **New
 `@trace/domain/network/pcf.ts`** (pure) — `computeProductFootprint` takes BOM lines already
@@ -44,9 +62,7 @@ versioned `pcf_record`. New `product` / `bom_line` / `pcf_record` tables and `pr
 `POST /products/:id/pcf/compute` (+ history). Web adds a Carbon → Product Footprints screen —
 the product list with each footprint + rating, a new-product form, and a per-product editor
 with an inline BOM editor and the PCF breakdown. Builds, typechecks, lints and unit tests are
-green; the Postgres-dependent integration suites (…, pcf) run in CI. A network scenario
-engine and cross-tenant benchmarking are the remaining Phase-14 work — see
-[docs/roadmap.md](docs/roadmap.md).
+green; the Postgres-dependent integration suites (…, pcf) run in CI.
 
 **Phase 14a — Carbon Twin: supply-chain graph (landed).** The first Phase-14 slice: a rolled-up
 **supply-chain carbon graph** with an explainable **hotspot ranking**, on Postgres adjacency

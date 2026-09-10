@@ -1122,6 +1122,46 @@ carbon_graph_snapshot(id, organization_id, version, builder_version,
 - RLS: `supply_chain_edge` + `carbon_graph_snapshot` are `FORCE` `current_org()`
   (migration `0040_carbon_graph_rls`).
 
+### Network scenario engine (Phase 14c)
+
+```
+network_scenario(id, organization_id, name, description, engine_version,
+                 base_graph_version, reporting_period NULL,
+                 baseline_tco2e numeric(20,6), projected_tco2e numeric(20,6),
+                 delta_tco2e numeric(20,6), delta_pct numeric(10,4),
+                 interventions jsonb, result jsonb, created_by_user_id, created_at)
+                 -- immutable; `result` = the domain NetworkScenarioResult
+```
+
+- **`@trace/domain/network/scenario.ts`** (pure): `NetworkIntervention {id, kind
+  ('decarbonize'|'substitute'|'drop_node'|'reroute'), label?, nodeId?,
+  reductionPct?, newDirectTco2e?, fromNodeId?, currentToNodeId?, newToNodeId?}`.
+  `applyNetworkScenario({nodes: CarbonNodeInput[], edges: CarbonEdgeInput[],
+  rootId?, interventions})` → `NetworkScenarioResult {engineVersion, baseline
+  {totalTco2e, hotspotCount}, projected {…}, deltaTco2e, deltaPct, nodeDeltas
+  [{id, label, tier, baselineTotalTco2e, projectedTotalTco2e, deltaTco2e,
+  deltaPct}] (non-zero, sorted by |Δ|), appliedInterventions [{id, kind, label,
+  ok, effect}], projectedGraph, projectedHotspots}` — deep-copies the inputs;
+  `decarbonize` scales `node.directTco2e` by `1 - pct/100`; `substitute` sets it
+  absolute (+ marks `attribution: 'supplier_specific'`); `drop_node` filters the
+  node + every touching edge (the root is refused); `reroute` finds the edge
+  `(from → currentTo)` and sets `edge.to = newToNodeId`; a missing target →
+  `ok: false` + a reason, no throw. Then `buildCarbonGraph` + `rankHotspots` on
+  the mutated lists. `NETWORK_SCENARIO_ENGINE_VERSION = 'network-scenario@1.0.0'`.
+- **`@trace/db/network.ts`**: `nodeInputsFromGraph` / `edgeInputsFromGraph`
+  reconstruct `CarbonNodeInput[]` / `CarbonEdgeInput[]` from a stored snapshot's
+  `CarbonGraph`. `previewNetworkScenario(db, {organizationId, baseGraphVersion?,
+  interventions})` → `{baseGraphVersion, reportingPeriod, result}` (latest or a
+  pinned snapshot version; no persist). `runNetworkScenario` — preview + persist a
+  `network_scenario` row (`baseline/projected/delta` broken out for listing;
+  `interventions` + full `result` JSON); audit `network.scenario_run`.
+  `listNetworkScenarios` (metadata) / `networkScenarioById`.
+- API: `NetworkController` — `POST /network/scenarios/preview` + `POST
+  /network/scenarios` (`network.manage`), `GET /network/scenarios` + `GET
+  /network/scenarios/:id` (`supplier.read`).
+- RLS: `network_scenario` is `FORCE` `current_org()` (migration
+  `0044_network_scenario_rls`).
+
 ### Product carbon footprints (Phase 14b)
 
 ```

@@ -161,6 +161,7 @@ model Organization {
   billingCheckouts   BillingCheckout[]
   supplyChainEdges   SupplyChainEdge[]
   carbonGraphSnapshots CarbonGraphSnapshot[]
+  networkScenarios   NetworkScenario[]
   products           Product[]
   bomLines           BomLine[]
   pcfRecords         PcfRecord[]
@@ -2495,6 +2496,32 @@ model CarbonGraphSnapshot {
   @@unique([organizationId, version])
   @@index([organizationId, computedAt])
   @@map("carbon_graph_snapshot")
+}
+
+/// An immutable what-if projected against a `carbon_graph_snapshot`. `result` is
+/// the @trace/domain `NetworkScenarioResult`. Like `procurement_scenario`, these
+/// are append-only records of a decision analysis.
+model NetworkScenario {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  name             String
+  description      String   @default("")
+  engineVersion    String   @map("engine_version")
+  baseGraphVersion Int      @map("base_graph_version")
+  reportingPeriod  String?  @map("reporting_period")
+  baselineTco2e    Decimal  @map("baseline_tco2e") @db.Decimal(20, 6)
+  projectedTco2e   Decimal  @map("projected_tco2e") @db.Decimal(20, 6)
+  deltaTco2e       Decimal  @map("delta_tco2e") @db.Decimal(20, 6)
+  deltaPct         Decimal  @map("delta_pct") @db.Decimal(10, 4)
+  interventions    Json
+  result           Json
+  createdByUserId  String   @map("created_by_user_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@map("network_scenario")
 }
 
 // ===========================================================================

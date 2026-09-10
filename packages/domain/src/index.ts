@@ -35,3 +35,4 @@ export * from './access/scim';
 export * from './access/billing';
 export * from './network/graph';
 export * from './network/pcf';
+export * from './network/scenario';

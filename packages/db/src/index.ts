@@ -241,11 +241,16 @@ export {
   carbonGraphByVersion,
   listCarbonGraphSnapshots,
   carbonGraphNodeTrace,
+  previewNetworkScenario,
+  runNetworkScenario,
+  listNetworkScenarios,
+  networkScenarioById,
 } from './network';
 export type {
   SupplyChainEdgeView,
   CarbonGraphSnapshotView,
   CarbonGraphNodeTrace,
+  NetworkScenarioView,
 } from './network';
 
 export {

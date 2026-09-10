@@ -1,4 +1,5 @@
 import {
+  applyNetworkScenario,
   buildCarbonGraph,
   rankHotspots,
   tracePath,
@@ -6,6 +7,8 @@ import {
   type CarbonGraph,
   type CarbonNodeInput,
   type HotspotReport,
+  type NetworkIntervention,
+  type NetworkScenarioResult,
   type NodeAttribution,
 } from '@trace/domain';
 import { AppError, type Provenance } from '@trace/shared';
@@ -585,4 +588,221 @@ export async function carbonGraphNodeTrace(
     hops: trace?.hops ?? 0,
     calculations,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Scenario engine (Phase 14c)
+// ---------------------------------------------------------------------------
+
+function nodeInputsFromGraph(graph: CarbonGraph): CarbonNodeInput[] {
+  return graph.nodes.map((n) => ({
+    id: n.id,
+    kind: n.kind,
+    label: n.label,
+    tier: n.tier,
+    directTco2e: n.directTco2e,
+    attribution: n.attribution,
+    annualSpendEur: n.annualSpendEur,
+    evidenceCoverage: n.evidenceCoverage,
+    hasPassport: n.hasPassport,
+    trustScore: n.trustScore,
+  }));
+}
+function edgeInputsFromGraph(graph: CarbonGraph): CarbonEdgeInput[] {
+  return graph.edges.map((e) => ({ from: e.from, to: e.to, relationship: e.relationship }));
+}
+
+export interface NetworkScenarioView {
+  id: string;
+  name: string;
+  description: string;
+  engineVersion: string;
+  baseGraphVersion: number;
+  reportingPeriod: string | null;
+  baselineTco2e: string;
+  projectedTco2e: string;
+  deltaTco2e: string;
+  deltaPct: string;
+  interventions: NetworkIntervention[];
+  result: NetworkScenarioResult;
+  createdByUserId: string;
+  createdAt: string;
+}
+
+async function baseGraphFor(
+  db: TenantDb,
+  organizationId: string,
+  baseGraphVersion?: number,
+): Promise<{ version: number; reportingPeriod: string | null; graph: CarbonGraph }> {
+  const snap = baseGraphVersion
+    ? await carbonGraphByVersion(db, organizationId, baseGraphVersion)
+    : await latestCarbonGraph(db, organizationId);
+  if (!snap) {
+    throw AppError.notFound(
+      'network.no_graph',
+      'Compute the supply-chain carbon graph before running a scenario.',
+    );
+  }
+  return { version: snap.version, reportingPeriod: snap.reportingPeriod, graph: snap.graph };
+}
+
+export async function previewNetworkScenario(
+  db: TenantDb,
+  args: {
+    organizationId: string;
+    baseGraphVersion?: number;
+    interventions: NetworkIntervention[];
+  },
+): Promise<{ baseGraphVersion: number; reportingPeriod: string | null; result: NetworkScenarioResult }> {
+  const base = await baseGraphFor(db, args.organizationId, args.baseGraphVersion);
+  const result = applyNetworkScenario({
+    nodes: nodeInputsFromGraph(base.graph),
+    edges: edgeInputsFromGraph(base.graph),
+    rootId: base.graph.rootId || 'org',
+    interventions: args.interventions,
+  });
+  return { baseGraphVersion: base.version, reportingPeriod: base.reportingPeriod, result };
+}
+
+export async function runNetworkScenario(
+  db: TenantDb,
+  args: {
+    organizationId: string;
+    name: string;
+    description?: string;
+    baseGraphVersion?: number;
+    interventions: NetworkIntervention[];
+    actorUserId: string;
+    requestId: string;
+  },
+): Promise<{ id: string; result: NetworkScenarioResult }> {
+  if (!args.name.trim()) {
+    throw AppError.unprocessable('network.scenario_no_name', 'A scenario name is required.');
+  }
+  if (!Array.isArray(args.interventions) || args.interventions.length === 0) {
+    throw AppError.unprocessable(
+      'network.scenario_no_interventions',
+      'A scenario needs at least one intervention.',
+    );
+  }
+  const { baseGraphVersion, reportingPeriod, result } = await previewNetworkScenario(db, {
+    organizationId: args.organizationId,
+    baseGraphVersion: args.baseGraphVersion,
+    interventions: args.interventions,
+  });
+
+  const row = await db.networkScenario.create({
+    data: {
+      organizationId: args.organizationId,
+      name: args.name.trim(),
+      description: args.description?.trim() ?? '',
+      engineVersion: result.engineVersion,
+      baseGraphVersion,
+      reportingPeriod,
+      baselineTco2e: result.baseline.totalTco2e.toFixed(6),
+      projectedTco2e: result.projected.totalTco2e.toFixed(6),
+      deltaTco2e: result.deltaTco2e.toFixed(6),
+      // The precise value lives in `result`; this column is for listing/sorting.
+      deltaPct: Math.max(-999999, Math.min(999999, result.deltaPct ?? 0)).toFixed(4),
+      interventions: args.interventions as unknown as Prisma.InputJsonValue,
+      result: result as unknown as Prisma.InputJsonValue,
+      createdByUserId: args.actorUserId,
+    },
+  });
+  await writeAuditLog(db, {
+    organizationId: args.organizationId,
+    actorId: args.actorUserId,
+    action: 'network.scenario_run',
+    resourceType: 'network_scenario',
+    resourceId: row.id,
+    before: null,
+    after: {
+      name: row.name,
+      baseGraphVersion,
+      baselineTco2e: result.baseline.totalTco2e,
+      projectedTco2e: result.projected.totalTco2e,
+      deltaTco2e: result.deltaTco2e,
+      interventions: args.interventions.length,
+    },
+    requestId: args.requestId,
+  });
+  return { id: row.id, result };
+}
+
+function toScenarioView(row: {
+  id: string;
+  name: string;
+  description: string;
+  engineVersion: string;
+  baseGraphVersion: number;
+  reportingPeriod: string | null;
+  baselineTco2e: { toString(): string };
+  projectedTco2e: { toString(): string };
+  deltaTco2e: { toString(): string };
+  deltaPct: { toString(): string };
+  interventions: unknown;
+  result: unknown;
+  createdByUserId: string;
+  createdAt: Date;
+}): NetworkScenarioView {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    engineVersion: row.engineVersion,
+    baseGraphVersion: row.baseGraphVersion,
+    reportingPeriod: row.reportingPeriod,
+    baselineTco2e: row.baselineTco2e.toString(),
+    projectedTco2e: row.projectedTco2e.toString(),
+    deltaTco2e: row.deltaTco2e.toString(),
+    deltaPct: row.deltaPct.toString(),
+    interventions: row.interventions as NetworkIntervention[],
+    result: row.result as NetworkScenarioResult,
+    createdByUserId: row.createdByUserId,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export async function listNetworkScenarios(
+  db: TenantDb,
+  organizationId: string,
+): Promise<
+  Array<{
+    id: string;
+    name: string;
+    baseGraphVersion: number;
+    baselineTco2e: string;
+    projectedTco2e: string;
+    deltaTco2e: string;
+    deltaPct: string;
+    interventions: number;
+    createdAt: string;
+  }>
+> {
+  const rows = await db.networkScenario.findMany({
+    where: { organizationId },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    baseGraphVersion: r.baseGraphVersion,
+    baselineTco2e: r.baselineTco2e.toString(),
+    projectedTco2e: r.projectedTco2e.toString(),
+    deltaTco2e: r.deltaTco2e.toString(),
+    deltaPct: r.deltaPct.toString(),
+    interventions: Array.isArray(r.interventions) ? r.interventions.length : 0,
+    createdAt: r.createdAt.toISOString(),
+  }));
+}
+
+export async function networkScenarioById(
+  db: TenantDb,
+  organizationId: string,
+  id: string,
+): Promise<NetworkScenarioView> {
+  const row = await db.networkScenario.findFirst({ where: { id, organizationId } });
+  if (!row) throw AppError.notFound('network.scenario_not_found', 'Scenario not found.');
+  return toScenarioView(row);
 }
