@@ -57,6 +57,8 @@ export const PERMISSIONS = {
   'calculation.read': 'View calculations and lineage',
   'calculation.run': 'Execute calculations',
   'calculation.approve': 'Approve calculation results',
+  'product.read': 'View products, bills of materials, and product carbon footprints',
+  'product.manage': 'Create products, edit bills of materials, and compute product carbon footprints',
 
   // AI extraction & review queue
   'document.process': 'Run the AI extraction pipeline on a document',

@@ -46,6 +46,7 @@ import { SsoModule } from './modules/sso/sso.module';
 import { ScimModule } from './modules/scim/scim.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { NetworkModule } from './modules/network/network.module';
+import { ProductsModule } from './modules/products/products.module';
 
 @Module({
   imports: [
@@ -87,6 +88,7 @@ import { NetworkModule } from './modules/network/network.module';
     ScimModule,
     BillingModule,
     NetworkModule,
+    ProductsModule,
   ],
   providers: [
     CatalogBootstrap,

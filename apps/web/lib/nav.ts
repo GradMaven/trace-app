@@ -41,6 +41,7 @@ export const NAV: NavSection[] = [
       { label: 'Scope 2', href: '/carbon/scope-2', ready: true },
       { label: 'Scope 3', href: '/carbon/scope-3', ready: true },
       { label: 'Emission Factors', href: '/carbon/factors', ready: true },
+      { label: 'Product Footprints', href: '/carbon/products', ready: true },
       { label: 'Scenarios', href: '/carbon/scenarios' },
     ],
   },

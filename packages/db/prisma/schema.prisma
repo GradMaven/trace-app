@@ -161,6 +161,9 @@ model Organization {
   billingCheckouts   BillingCheckout[]
   supplyChainEdges   SupplyChainEdge[]
   carbonGraphSnapshots CarbonGraphSnapshot[]
+  products           Product[]
+  bomLines           BomLine[]
+  pcfRecords         PcfRecord[]
 
   @@map("organization")
 }
@@ -404,6 +407,7 @@ model Supplier {
   invitations  Invitation[]
   outgoingEdges SupplyChainEdge[]    @relation("SupplyChainEdgeFrom")
   incomingEdges SupplyChainEdge[]    @relation("SupplyChainEdgeTo")
+  bomLines      BomLine[]
 
   @@index([organizationId, name])
   @@index([organizationId, status])
@@ -753,6 +757,7 @@ model EmissionFactor {
 
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   calculations Calculation[]
+  bomLines     BomLine[]
 
   @@index([source, sourceRef])
   @@index([organizationId, scope])
@@ -2490,4 +2495,149 @@ model CarbonGraphSnapshot {
   @@unique([organizationId, version])
   @@index([organizationId, computedAt])
   @@map("carbon_graph_snapshot")
+}
+
+// ===========================================================================
+// Product carbon footprints (Phase 14b)
+// ===========================================================================
+
+enum PcfBoundary {
+  cradle_to_gate
+
+  @@map("pcf_boundary")
+}
+
+enum PcfLineKind {
+  material
+  energy
+  transport
+  component
+  process
+  packaging
+
+  @@map("pcf_line_kind")
+}
+
+enum PcfLineSource {
+  factor
+  supplier
+  sub_product
+  manual
+
+  @@map("pcf_line_source")
+}
+
+enum PcfDataTier {
+  primary
+  secondary
+  estimated
+
+  @@map("pcf_data_tier")
+}
+
+enum AllocationMethod {
+  none
+  mass
+  economic
+  physical
+
+  @@map("allocation_method")
+}
+
+/// A product the organization makes or sells. `functionalUnit` is the reference
+/// unit a PCF is expressed per ("1 t rolled steel", "1 unit"); `allocationFactor`
+/// is the share of a multi-output process assigned to this product.
+model Product {
+  id               String           @id @default(uuid()) @db.Uuid
+  organizationId   String           @map("organization_id") @db.Uuid
+  name             String
+  sku              String?
+  description      String           @default("")
+  functionalUnit   String           @map("functional_unit")
+  referenceAmount  Decimal          @default(1) @map("reference_amount") @db.Decimal(20, 6)
+  referenceUnit    String           @map("reference_unit")
+  boundary         PcfBoundary      @default(cradle_to_gate)
+  allocationMethod AllocationMethod @default(none) @map("allocation_method")
+  allocationFactor Decimal          @default(1) @map("allocation_factor") @db.Decimal(7, 6)
+  allocationNote   String?          @map("allocation_note")
+  status           String           @default("active")
+  createdByUserId  String           @map("created_by_user_id") @db.Uuid
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt        DateTime?        @map("deleted_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bomLines     BomLine[]    @relation("ProductBomLines")
+  usedInLines  BomLine[]    @relation("BomSubProduct")
+  pcfRecords   PcfRecord[]
+
+  @@index([organizationId, name])
+  @@index([organizationId, status])
+  @@map("product")
+}
+
+/// One input to make a functional unit of a product. The emission value comes
+/// from a library / org emission factor, a supplier's carbon intensity, another
+/// product's PCF (a sub-assembly), or a declared per-unit value.
+model BomLine {
+  id               String        @id @default(uuid()) @db.Uuid
+  organizationId   String        @map("organization_id") @db.Uuid
+  productId        String        @map("product_id") @db.Uuid
+  label            String
+  kind             PcfLineKind
+  quantity         Decimal       @db.Decimal(20, 6)
+  unit             String
+  source           PcfLineSource
+  emissionFactorId String?       @map("emission_factor_id") @db.Uuid
+  supplierId       String?       @map("supplier_id") @db.Uuid
+  subProductId     String?       @map("sub_product_id") @db.Uuid
+  manualKgCo2e     Decimal?      @map("manual_kg_co2e") @db.Decimal(20, 6)
+  dataTier         PcfDataTier   @default(secondary) @map("data_tier")
+  note             String?
+  sortOrder        Int           @default(0) @map("sort_order")
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product        Product         @relation("ProductBomLines", fields: [productId], references: [id], onDelete: Cascade)
+  emissionFactor EmissionFactor? @relation(fields: [emissionFactorId], references: [id], onDelete: SetNull)
+  supplier       Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  subProduct     Product?        @relation("BomSubProduct", fields: [subProductId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, productId])
+  @@map("bom_line")
+}
+
+/// Immutable, versioned product carbon footprint (like `calculation`). `data` is
+/// the @trace/domain `ProductFootprint`. Recompute chains a new version via
+/// `supersedesId`.
+model PcfRecord {
+  id                  String           @id @default(uuid()) @db.Uuid
+  organizationId      String           @map("organization_id") @db.Uuid
+  productId           String           @map("product_id") @db.Uuid
+  version             Int
+  methodVersion       String           @map("method_version")
+  boundary            PcfBoundary
+  functionalUnit      String           @map("functional_unit")
+  reportingPeriod     String?          @map("reporting_period")
+  totalKgCo2e         Decimal          @map("total_kg_co2e") @db.Decimal(24, 6)
+  subtotalKgCo2e      Decimal          @map("subtotal_kg_co2e") @db.Decimal(24, 6)
+  allocationMethod    AllocationMethod @map("allocation_method")
+  allocationFactor    Decimal          @map("allocation_factor") @db.Decimal(7, 6)
+  primaryDataSharePct Int              @map("primary_data_share_pct")
+  dataQualityRating   String           @map("data_quality_rating")
+  breakdown           Json
+  inputsDigest        String           @map("inputs_digest")
+  supersedesId        String?          @map("supersedes_id") @db.Uuid
+  computedByUserId    String?          @map("computed_by_user_id") @db.Uuid
+  computedAt          DateTime         @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supersedes   PcfRecord?   @relation("PcfVersion", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy PcfRecord[]  @relation("PcfVersion")
+
+  @@unique([productId, version])
+  @@index([organizationId, computedAt])
+  @@map("pcf_record")
 }

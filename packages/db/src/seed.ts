@@ -34,6 +34,9 @@ import {
   createIntegration,
   computeCarbonGraph,
   upsertSupplyChainEdge,
+  createProduct,
+  addBomLine,
+  computePcf,
   loadRuleStore,
   runAskQuery,
   runProcurementScenario,
@@ -249,6 +252,9 @@ async function main(): Promise<void> {
   await seedCarbonTwin();
   console.warn('[seed] Supply-chain carbon graph computed (v1).');
 
+  await seedProducts();
+  console.warn('[seed] Demo product carbon footprint computed (v1).');
+
   console.warn(
     '[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).',
   );
@@ -345,6 +351,107 @@ async function seedScim(): Promise<void> {
     });
     // Issue a token so the console shows a prefix; the connection stays disabled.
     await rotateScimToken(db, { organizationId: orgId, actorUserId: adminId, requestId: 'seed' });
+  });
+}
+
+async function seedProducts(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const adminId = DEMO.users.admin.id;
+
+  await withOrgContext(orgId, async (db) => {
+    if (await db.product.findFirst({ where: { organizationId: orgId } })) return;
+
+    const { id: productId } = await createProduct(db, {
+      organizationId: orgId,
+      input: {
+        name: 'Hot-rolled steel coil',
+        sku: 'HRC-1T',
+        description: 'Cradle-to-gate PCF for one tonne of hot-rolled coil.',
+        functionalUnit: '1 t hot-rolled coil',
+        referenceAmount: 1,
+        referenceUnit: 't',
+        allocationMethod: 'mass',
+        allocationFactor: 0.98, // mill scale co-product carries ~2%
+        allocationNote: 'Mass allocation; mill scale co-product excluded (~2% of output mass).',
+      },
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
+
+    const factor = (ref: string) =>
+      db.emissionFactor.findFirst({ where: { sourceRef: ref } }).then((f) => f?.id ?? null);
+    const steelF = await factor('steel-crude-de');
+    const powerF = await factor('electricity-grid-de-market');
+    const freightF = await factor('road-freight-hgv');
+    const rheinstahl = await db.supplier.findFirst({
+      where: { organizationId: orgId, name: { contains: 'Rheinstahl' } },
+      select: { id: true },
+    });
+
+    const line = (input: Parameters<typeof addBomLine>[1]['input']) =>
+      addBomLine(db, { organizationId: orgId, productId, input, actorUserId: adminId, requestId: 'seed' });
+
+    if (steelF) {
+      await line({
+        label: 'Crude steel input',
+        kind: 'material',
+        quantity: 1.05,
+        unit: 't',
+        source: 'factor',
+        emissionFactorId: steelF,
+        dataTier: 'secondary',
+      });
+    }
+    if (powerF) {
+      await line({
+        label: 'Rolling-mill electricity',
+        kind: 'energy',
+        quantity: 520,
+        unit: 'kWh',
+        source: 'factor',
+        emissionFactorId: powerF,
+        dataTier: 'primary',
+        note: 'Metered mill consumption; market-based grid factor.',
+      });
+    }
+    if (freightF) {
+      await line({
+        label: 'Inbound scrap haulage',
+        kind: 'transport',
+        quantity: 180,
+        unit: 't.km',
+        source: 'factor',
+        emissionFactorId: freightF,
+        dataTier: 'secondary',
+      });
+    }
+    if (rheinstahl) {
+      await line({
+        label: 'Alloying additives (spend-based)',
+        kind: 'material',
+        quantity: 6000,
+        unit: 'EUR',
+        source: 'supplier',
+        supplierId: rheinstahl.id,
+        dataTier: 'estimated',
+      });
+    }
+    await line({
+      label: 'Steel strapping & edge protectors',
+      kind: 'packaging',
+      quantity: 1,
+      unit: 'unit',
+      source: 'manual',
+      manualKgCo2e: 3.2,
+      dataTier: 'estimated',
+    });
+
+    await computePcf(db, {
+      organizationId: orgId,
+      productId,
+      computedByUserId: adminId,
+      requestId: 'seed',
+    });
   });
 }
 

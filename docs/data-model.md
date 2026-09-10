@@ -1122,6 +1122,73 @@ carbon_graph_snapshot(id, organization_id, version, builder_version,
 - RLS: `supply_chain_edge` + `carbon_graph_snapshot` are `FORCE` `current_org()`
   (migration `0040_carbon_graph_rls`).
 
+### Product carbon footprints (Phase 14b)
+
+```
+product(id, organization_id, name, sku NULL, description, functional_unit,
+        reference_amount numeric, reference_unit, boundary default 'cradle_to_gate',
+        allocation_method default 'none', allocation_factor numeric(7,6) default 1,
+        allocation_note NULL, status default 'active',
+        created_by_user_id, created_at, updated_at, deleted_at NULL)
+
+bom_line(id, organization_id, product_id, label, kind (material|energy|transport|
+         component|process|packaging), quantity numeric, unit,
+         source (factor|supplier|sub_product|manual),
+         emission_factor_id NULL, supplier_id NULL, sub_product_id NULL,
+         manual_kg_co2e NULL, data_tier (primary|secondary|estimated) default 'secondary',
+         note NULL, sort_order, created_at, updated_at)
+
+pcf_record(id, organization_id, product_id, version, method_version, boundary,
+           functional_unit, reporting_period NULL, total_kg_co2e numeric(24,6),
+           subtotal_kg_co2e numeric(24,6), allocation_method, allocation_factor numeric(7,6),
+           primary_data_share_pct, data_quality_rating (A..E), breakdown jsonb,
+           inputs_digest, supersedes_id NULL, computed_by_user_id NULL, computed_at,
+           UNIQUE(product_id, version))   -- immutable; `breakdown` = the domain ProductFootprint
+```
+
+- **`@trace/domain/network/pcf.ts`** (pure): `PCF_METHOD_VERSION = 'pcf@1.0.0'`.
+  `PcfLineInput {id, label, kind, source, quantity, unit, kgCo2ePerUnit (number
+  |null — already unit-resolved), dataTier, resolvedFrom, note?}`.
+  `computeProductFootprint({functionalUnit, boundary, allocation:{method, factor,
+  note?}, lines})` → `ProductFootprint` — `factor` outside `[0,1]` throws; per
+  line `kgCo2e = quantity × kgCo2ePerUnit` (null → 0 + a warning);
+  `subtotalKgCo2e` = Σ; `totalKgCo2e = subtotal × allocation.factor`;
+  `breakdown[]` (per-line `{kgCo2e, sharePct, resolvedFrom, warning}`), `byKind[]`
+  (non-zero only); `primary/secondary/estimatedDataSharePct` from the
+  direct-weighted tier split; `dataQualityRating` A ≥ 80 / B ≥ 60 / C ≥ 40 /
+  D ≥ 20 / E; `unresolvedLines`; `warnings`; `inputsDigest` = sha256 of canonical
+  `{v, fu, b, a, lines:[[id, kind, source, qty, unit, kgCo2ePerUnit, dataTier]]}`.
+  `pcfDataTierForMethodology` maps `supplier_specific` / `fuel_based` /
+  `energy_based` → primary, `spend_based` → estimated, else secondary.
+- **`@trace/db/pcf.ts`**: `createProduct` / `updateProduct` (validates the
+  allocation factor) / `archiveProduct` / `listProducts` (each with its latest
+  PCF summary) / `productDetail` (product + BOM lines with resolved factor /
+  supplier / sub-product names + latest PCF). `addBomLine` / `updateBomLine` /
+  `deleteBomLine` — `validateLineSource` checks the referenced factor
+  (`OR organizationId null` for the library), supplier or sub-product exists for
+  the org, and rejects a self-referencing sub-product. `computePcf(db,
+  {organizationId, productId, reportingPeriod?, computedByUserId?})` — batches one
+  `supplierCarbonComparison` for the supplier lines, then per line: `factor` →
+  `computeEmission({activityValue:1, activityUnit: line.unit, factorValue,
+  factorNumeratorUnit, factorDenominatorUnit, gwpSet, methodology})` →
+  `resultValueTco2e × 1000` (a thrown `UnitError` → `kgCo2ePerUnit: null`,
+  `dataTier: estimated`); `supplier` → the row's `carbonIntensityPerKEur`
+  (tCO2e/€1k == kg/€), `dataTier: estimated`; `sub_product` → the latest
+  `pcf_record.totalKgCo2e`, `dataTier` primary if the sub-PCF is A/B else
+  secondary; `manual` → the declared value. Runs `computeProductFootprint`,
+  persists `pcf_record` version `(max)+1` with `supersedesId = prev`, `breakdown =
+  footprint` JSON, `inputsDigest`; audit `pcf.computed`. `latestPcf` /
+  `pcfByVersion` / `listPcfRecords`.
+- `@trace/shared`: `product.read` (in `READ_ONLY_SUSTAINABILITY`) and
+  `product.manage` — both added next to `calculation.*` for the sustainability
+  roles; `organization_admin` holds all.
+- API: `ProductsController` — `GET` / `POST /products`, `GET` / `PATCH` /
+  `DELETE /products/:id`, `POST` / `PATCH` / `DELETE /products/:id/bom[/:lineId]`,
+  `POST /products/:id/pcf/compute`, `GET /products/:id/pcf` (`?version=`) +
+  `/pcf/history`. `product.read` for reads, `product.manage` for writes.
+- RLS: `product` + `bom_line` + `pcf_record` are `FORCE` `current_org()`
+  (migration `0042_pcf_rls`).
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

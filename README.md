@@ -29,6 +29,25 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 14b — Product carbon footprints (landed).** The second Phase-14 slice: cradle-to-gate
+**product carbon footprints (PCF)** from a bill of materials. **New
+`@trace/domain/network/pcf.ts`** (pure) — `computeProductFootprint` takes BOM lines already
+resolved to "kg CO2e per unit" and rolls up the footprint per functional unit, applies a
+single allocation factor, breaks it down by line and by kind, and grades the data quality
+**A–E** from the primary-data share, with a reproducible `inputsDigest`.
+`@trace/db/pcf.ts` adds product + BOM CRUD and `computePcf`, which resolves each line —
+a library / org emission factor via the Phase-4 carbon engine (unit-aware; a unit mismatch
+just marks that line unresolved), a supplier's spend-based carbon intensity, another
+product's PCF (a recursive sub-assembly), or a declared value — then persists an immutable
+versioned `pcf_record`. New `product` / `bom_line` / `pcf_record` tables and `product.read` /
+`product.manage` permissions. The API adds `/products` CRUD, `/products/:id/bom` editing, and
+`POST /products/:id/pcf/compute` (+ history). Web adds a Carbon → Product Footprints screen —
+the product list with each footprint + rating, a new-product form, and a per-product editor
+with an inline BOM editor and the PCF breakdown. Builds, typechecks, lints and unit tests are
+green; the Postgres-dependent integration suites (…, pcf) run in CI. A network scenario
+engine and cross-tenant benchmarking are the remaining Phase-14 work — see
+[docs/roadmap.md](docs/roadmap.md).
+
 **Phase 14a — Carbon Twin: supply-chain graph (landed).** The first Phase-14 slice: a rolled-up
 **supply-chain carbon graph** with an explainable **hotspot ranking**, on Postgres adjacency
 (no graph database). **New `@trace/domain/network/graph.ts`** (pure) — `buildCarbonGraph`
@@ -47,9 +66,7 @@ tables and a `network.manage` permission (viewing needs only `supplier.read`). T
 `GET/POST/DELETE /network/edges`. Web adds a Supply Chain → Carbon Twin screen — footprint
 and coverage stats, a Pareto bar, the ranked hotspot table, a Recompute action, the
 upstream-links editor, and a node-trace drawer. Builds, typechecks, lints and unit tests are
-green; the Postgres-dependent integration suites (…, network) run in CI. Product carbon
-footprints and network benchmarking are the remaining Phase-14 work — see
-[docs/roadmap.md](docs/roadmap.md).
+green; the Postgres-dependent integration suites (…, network) run in CI.
 
 **Phase 13h — Billing provider (landed).** On top of Phase 13g, and the final Phase-13 slice:
 a Stripe-shaped billing integration wired to the Phase-13c plan / quota engine. **New

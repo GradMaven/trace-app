@@ -249,6 +249,29 @@ export type {
 } from './network';
 
 export {
+  createProduct,
+  updateProduct,
+  archiveProduct,
+  listProducts,
+  productDetail,
+  addBomLine,
+  updateBomLine,
+  deleteBomLine,
+  computePcf,
+  latestPcf,
+  pcfByVersion,
+  listPcfRecords,
+} from './pcf';
+export type {
+  ProductInput,
+  ProductSummary,
+  ProductDetail,
+  BomLineInput,
+  BomLineView,
+  PcfRecordView,
+} from './pcf';
+
+export {
   previewImport,
   commitImport,
   createIntegration,
