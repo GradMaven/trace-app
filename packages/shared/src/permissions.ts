@@ -37,6 +37,7 @@ export const PERMISSIONS = {
   'supplier.invite': 'Invite supplier-portal users',
   'supplier.request': 'Send and manage information requests to suppliers',
   'procurement.scenario': 'Create and run procurement carbon what-if scenarios',
+  'network.manage': 'Compute the supply-chain carbon graph and edit declared supplier links',
 
   // Supplier portal (external supplier users)
   'portal.access': 'Access the supplier portal for the linked supplier',

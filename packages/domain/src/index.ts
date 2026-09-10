@@ -33,3 +33,4 @@ export * from './access/oidc';
 export * from './access/saml';
 export * from './access/scim';
 export * from './access/billing';
+export * from './network/graph';

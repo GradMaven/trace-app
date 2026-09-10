@@ -32,6 +32,8 @@ import {
   confirmMapping,
   commitImport,
   createIntegration,
+  computeCarbonGraph,
+  upsertSupplyChainEdge,
   loadRuleStore,
   runAskQuery,
   runProcurementScenario,
@@ -244,6 +246,9 @@ async function main(): Promise<void> {
   await seedBilling();
   console.warn('[seed] Demo billing connection configured (disabled).');
 
+  await seedCarbonTwin();
+  console.warn('[seed] Supply-chain carbon graph computed (v1).');
+
   console.warn(
     '[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).',
   );
@@ -340,6 +345,57 @@ async function seedScim(): Promise<void> {
     });
     // Issue a token so the console shows a prefix; the connection stays disabled.
     await rotateScimToken(db, { organizationId: orgId, actorUserId: adminId, requestId: 'seed' });
+  });
+}
+
+async function seedCarbonTwin(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const adminId = DEMO.users.admin.id;
+
+  await withOrgContext(orgId, async (db) => {
+    const steel = await db.supplier.findFirst({
+      where: { organizationId: orgId, name: { contains: 'Rheinstahl' } },
+      select: { id: true },
+    });
+    const bearings = await db.supplier.findFirst({
+      where: { organizationId: orgId, name: { contains: 'Nordic Bearings' } },
+      select: { id: true },
+    });
+    // Declared upstream links so the graph reaches past tier 1.
+    if (steel) {
+      await upsertSupplyChainEdge(db, {
+        organizationId: orgId,
+        fromSupplierId: steel.id,
+        toLabel: 'Iron ore mining (EEIO)',
+        relationship: 'raw material',
+        actorUserId: adminId,
+        requestId: 'seed',
+      });
+      await upsertSupplyChainEdge(db, {
+        organizationId: orgId,
+        fromSupplierId: steel.id,
+        toLabel: 'Metallurgical coke supplier',
+        relationship: 'raw material',
+        actorUserId: adminId,
+        requestId: 'seed',
+      });
+    }
+    if (bearings && steel) {
+      await upsertSupplyChainEdge(db, {
+        organizationId: orgId,
+        fromSupplierId: bearings.id,
+        toSupplierId: steel.id,
+        relationship: 'bearing steel',
+        actorUserId: adminId,
+        requestId: 'seed',
+      });
+    }
+
+    await computeCarbonGraph(db, {
+      organizationId: orgId,
+      computedByUserId: adminId,
+      requestId: 'seed',
+    });
   });
 }
 

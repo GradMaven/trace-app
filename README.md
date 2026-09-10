@@ -29,6 +29,28 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 14a — Carbon Twin: supply-chain graph (landed).** The first Phase-14 slice: a rolled-up
+**supply-chain carbon graph** with an explainable **hotspot ranking**, on Postgres adjacency
+(no graph database). **New `@trace/domain/network/graph.ts`** (pure) — `buildCarbonGraph`
+rolls each supplier's attributed Scope 3 emissions up through tenant-declared upstream links
+(DAG-safe: a shared upstream supplier is counted once; depth-capped and cycle-guarded), with
+the organization's own Scope 1 & 2 at the root, and `rankHotspots` marks the smallest set of
+suppliers that together drive ~80% of the footprint, each with plain-language reasons
+(top contributor, above-median intensity, spend-based estimate, thin evidence, low Trust,
+tier-1 without a passport). `@trace/db/network.ts` adds the declared-links CRUD, and
+`computeCarbonGraph` — which gathers real suppliers, their emission datapoints, spend,
+verified-evidence coverage and Trust, builds the graph, ranks the hotspots, and persists an
+immutable versioned `carbon_graph_snapshot`; `carbonGraphNodeTrace` walks any node back to
+the root and lists its backing calculations. New `supply_chain_edge` / `carbon_graph_snapshot`
+tables and a `network.manage` permission (viewing needs only `supplier.read`). The API adds
+`GET /network/graph` (+ history + per-node trace), `POST /network/graph/compute`, and
+`GET/POST/DELETE /network/edges`. Web adds a Supply Chain → Carbon Twin screen — footprint
+and coverage stats, a Pareto bar, the ranked hotspot table, a Recompute action, the
+upstream-links editor, and a node-trace drawer. Builds, typechecks, lints and unit tests are
+green; the Postgres-dependent integration suites (…, network) run in CI. Product carbon
+footprints and network benchmarking are the remaining Phase-14 work — see
+[docs/roadmap.md](docs/roadmap.md).
+
 **Phase 13h — Billing provider (landed).** On top of Phase 13g, and the final Phase-13 slice:
 a Stripe-shaped billing integration wired to the Phase-13c plan / quota engine. **New
 `@trace/domain/access/billing.ts`** (pure) — `verifyBillingSignature` (the same

@@ -233,6 +233,22 @@ export {
 export type { RunProcurementScenarioArgs, RunProcurementScenarioResult } from './procurement';
 
 export {
+  listSupplyChainEdges,
+  upsertSupplyChainEdge,
+  deleteSupplyChainEdge,
+  computeCarbonGraph,
+  latestCarbonGraph,
+  carbonGraphByVersion,
+  listCarbonGraphSnapshots,
+  carbonGraphNodeTrace,
+} from './network';
+export type {
+  SupplyChainEdgeView,
+  CarbonGraphSnapshotView,
+  CarbonGraphNodeTrace,
+} from './network';
+
+export {
   previewImport,
   commitImport,
   createIntegration,

@@ -1059,6 +1059,69 @@ billing_checkout(id, organization_id, plan_key, provider_ref NULL,
   `withOrgContext`. `billing_event` / `billing_checkout` carry `organization_id`,
   are not RLS'd (system logs, swept cross-tenant by the worker).
 
+### Carbon Twin — supply-chain graph (Phase 14a)
+
+```
+supply_chain_edge(id, organization_id, from_supplier_id, to_supplier_id NULL,
+                  to_label, relationship NULL, tier NULL, source default 'manual',
+                  created_by_user_id, created_at, updated_at,
+                  UNIQUE(organization_id, from_supplier_id, to_label))
+                  -- a tenant-declared upstream link; to_supplier_id set when the
+                  -- upstream party is itself a `supplier` row, else to_label only
+
+carbon_graph_snapshot(id, organization_id, version, builder_version,
+                      reporting_period NULL, data jsonb, node_count, edge_count,
+                      total_tco2e numeric(20,6), attributed_pct, hotspot_count,
+                      computed_by_user_id NULL, computed_at,
+                      UNIQUE(organization_id, version))
+                      -- immutable; `data` = the domain CarbonGraph + HotspotReport
+```
+
+- **`@trace/domain/network/graph.ts`** (pure): `buildCarbonGraph(nodeInputs,
+  edgeInputs, {rootId?})` → `CarbonGraph { builderVersion, rootId, nodes[], edges[],
+  totals, cycleWarnings }`. Each `CarbonGraphNode` carries `directTco2e`,
+  `upstreamTco2e` (= Σ `directTco2e` of its **unique** descendants — DAG-safe,
+  `MAX_GRAPH_DEPTH = 8`, back-edges dropped into `cycleWarnings`), `totalTco2e`,
+  `intensityTco2ePerKEur`, `depth` (BFS from root), `childIds` / `parentIds`. Each
+  `CarbonGraphEdge` gets `tco2e` (root→supplier = supplier's total; supplier→supplier
+  = the upstream node's total if > 0, else null → `kind: 'declared'`) and `share`
+  of the root total. `totals` = `{nodes, suppliers, edges, totalTco2e,
+  supplierSpecificTco2e, spendBasedTco2e, unattributedSuppliers, attributedPct,
+  evidenceBackedPct (direct-weighted), maxDepth}`. `rankHotspots(graph,
+  {coverageTarget = 0.8})` → `HotspotReport { coverageTarget, hotspotCount,
+  cumulativeSharePctAtCut, medianIntensityTco2ePerKEur, nodes[] }` — supplier nodes
+  sorted by `totalTco2e`, the smallest prefix reaching the target cumulative share
+  is the hotspot set; each node has `sharePct` / `cumulativeSharePct` / `rank` /
+  `isHotspot` / `intensityVsMedian` and explainable `reasons`. `tracePath(graph,
+  nodeId)` → `{path, hops}` shortest hop path from the root.
+  `CARBON_GRAPH_BUILDER_VERSION = 'carbon-graph@1.0.0'`.
+- **`@trace/db/network.ts`**: `listSupplyChainEdges` / `upsertSupplyChainEdge`
+  (validates buyer + upstream belong to the org; upserts on `(org,
+  from_supplier_id, to_label)`; audit `network.edge_added` / `_updated`) /
+  `deleteSupplyChainEdge`. `computeCarbonGraph(db, {organizationId,
+  reportingPeriod?, computedByUserId?})` — active suppliers + their period
+  emission datapoints (`subject_type = 'supplier'`, `metric_key LIKE 'emission_%'`)
+  aggregated per supplier, the backing calculations' methodology → the
+  `NodeAttribution` (`supplier_specific` / `spend_based` / `mixed` / `none`), spend
+  from `supplier_relationship`, verified `supplier_evidence_ref` fraction as
+  `evidenceCoverage`, min current `trust_score`, and the org's own `emission` rows
+  for Scope 1 + market-based (else location) Scope 2 as the root's
+  `directTco2e`. Builds the node list (org root + suppliers + a stub per declared
+  external party) and edge list (org → every active supplier + the declared
+  links) → `buildCarbonGraph` + `rankHotspots` → new `carbon_graph_snapshot`
+  version; audit `network.graph_computed`. `latestCarbonGraph` /
+  `carbonGraphByVersion` / `listCarbonGraphSnapshots` (metadata) /
+  `carbonGraphNodeTrace(db, org, nodeId, version?)` → `{path, pathLabels, hops,
+  node, calculations[]}` (the node's top emission-backing calculations with
+  `methodology` / `factorSource` / `evidenceCount`).
+- API: `NetworkController` — `GET /network/graph` (`?version=`), `GET
+  /network/graph/history`, `POST /network/graph/compute` (`network.manage`), `GET
+  /network/graph/nodes/:nodeId/trace`, `GET` / `POST` / `DELETE /network/edges`.
+  Viewing needs `supplier.read`; computing + editing edges needs the new
+  `network.manage` permission.
+- RLS: `supply_chain_edge` + `carbon_graph_snapshot` are `FORCE` `current_org()`
+  (migration `0040_carbon_graph_rls`).
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

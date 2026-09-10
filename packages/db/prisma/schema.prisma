@@ -159,6 +159,8 @@ model Organization {
   billingConfig      BillingConfig?
   billingEvents      BillingEvent[]
   billingCheckouts   BillingCheckout[]
+  supplyChainEdges   SupplyChainEdge[]
+  carbonGraphSnapshots CarbonGraphSnapshot[]
 
   @@map("organization")
 }
@@ -400,6 +402,8 @@ model Supplier {
   passports    SupplierPassport[]
   memberships  Membership[]
   invitations  Invitation[]
+  outgoingEdges SupplyChainEdge[]    @relation("SupplyChainEdgeFrom")
+  incomingEdges SupplyChainEdge[]    @relation("SupplyChainEdgeTo")
 
   @@index([organizationId, name])
   @@index([organizationId, status])
@@ -2431,4 +2435,59 @@ model BillingCheckout {
 
   @@index([organizationId, createdAt])
   @@map("billing_checkout")
+}
+
+// ===========================================================================
+// Carbon Twin — supply-chain graph (Phase 14)
+// ===========================================================================
+
+/// A tenant-declared upstream link in the supply chain: `fromSupplier` buys from
+/// an upstream party. `toSupplier` is set when that party is itself a known
+/// `supplier` row; otherwise only `toLabel` (a free-text name) is recorded. The
+/// carbon-graph builder walks these edges to roll emissions up the chain.
+model SupplyChainEdge {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  fromSupplierId String   @map("from_supplier_id") @db.Uuid
+  toSupplierId   String?  @map("to_supplier_id") @db.Uuid
+  toLabel        String   @map("to_label")
+  relationship   String?
+  tier           Int?
+  source         String   @default("manual")
+  createdByUserId String  @map("created_by_user_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fromSupplier Supplier     @relation("SupplyChainEdgeFrom", fields: [fromSupplierId], references: [id], onDelete: Cascade)
+  toSupplier   Supplier?    @relation("SupplyChainEdgeTo", fields: [toSupplierId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, fromSupplierId, toLabel])
+  @@index([organizationId, fromSupplierId])
+  @@map("supply_chain_edge")
+}
+
+/// An immutable, versioned snapshot of the computed carbon graph + hotspot
+/// ranking (like `supplier_passport`). `data` is the @trace/domain `CarbonGraph`
+/// plus the `HotspotReport`. Recompute chains a new version.
+model CarbonGraphSnapshot {
+  id                String   @id @default(uuid()) @db.Uuid
+  organizationId    String   @map("organization_id") @db.Uuid
+  version           Int
+  builderVersion    String   @map("builder_version")
+  reportingPeriod   String?  @map("reporting_period")
+  data              Json
+  nodeCount         Int      @map("node_count")
+  edgeCount         Int      @map("edge_count")
+  totalTco2e        Decimal  @map("total_tco2e") @db.Decimal(20, 6)
+  attributedPct     Int      @map("attributed_pct")
+  hotspotCount      Int      @map("hotspot_count")
+  computedByUserId  String?  @map("computed_by_user_id") @db.Uuid
+  computedAt        DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, version])
+  @@index([organizationId, computedAt])
+  @@map("carbon_graph_snapshot")
 }
