@@ -29,6 +29,28 @@ regulatory disclosure it supports.
 
 ## Project status
 
+**Phase 13f — SAML 2.0 SSO (landed).** On top of Phase 13e: per-organization SAML 2.0
+Web-Browser-SSO with just-in-time provisioning. **New `@trace/domain/access/saml.ts`** (pure) —
+the SP-initiated AuthnRequest + HTTP-Redirect binding (`SAMLResponse = base64(DEFLATE(xml))`),
+SP metadata, and `verifySamlResponse`: XML Digital Signature verification via the vetted
+`xml-crypto` / `@xmldom/xmldom` libraries (identity is read only from the bytes the library
+reports as signed, which defeats signature-wrapping), plus every non-signature check —
+exactly one assertion, each `<ds:Signature>` on the Response or that Assertion, RSA-SHA-256
+only, `Issuer` / `Status` / bearer `SubjectConfirmationData` (`Recipient`, `InResponseTo`,
+expiry) / `Conditions` window / `AudienceRestriction`. `@trace/db/saml.ts` adds
+`upsertSamlProvider` / `getSamlProvider` / `deleteSamlProvider`, `beginSamlLogin` (persists a
+single-use `saml_login_request` and returns the IdP redirect URL) and `completeSamlLogin`
+(no injected I/O — the IdP posts the assertion straight to the ACS) which verifies the
+assertion, enforces the email-domain allowlist, upserts the platform user, and JIT-creates a
+membership with the roles from the attribute mapping inside `withOrgContext`. New
+`saml_provider` / `saml_login_request` / `saml_link` tables. The API adds `GET
+/auth/saml/:slug/{start,metadata}` and `POST /auth/saml/:slug/acs` (`@Public()`, errors
+redirect to `/login?sso_error=`) and `GET/PUT/DELETE /settings/saml` (`security.manage`). Web
+adds a protocol selector to the login SSO box and a Settings → SAML SSO config screen. Builds,
+typechecks, lints and unit tests are green; the Postgres-dependent integration suites (…,
+saml) run in CI. SCIM and a real billing provider are the only remaining Phase-13 items — see
+[docs/roadmap.md](docs/roadmap.md).
+
 **Phase 13e — OpenID Connect SSO (landed).** On top of Phase 13d: per-organization OIDC
 sign-in with just-in-time provisioning. **New `@trace/domain/access/oidc.ts`** (pure) —
 PKCE (`generatePkce` / `pkceChallengeFor`), the `state` / `nonce` tokens, the
@@ -45,9 +67,7 @@ mapped roles inside `withOrgContext`. New `identity_provider` / `sso_login_reque
 (`@Public()`, errors redirect to `/login?sso_error=`) and `GET/PUT/DELETE /settings/sso` +
 `POST /settings/sso/discover` (`security.manage`). Web adds a "Continue with SSO" box on the
 login page and a Settings → Single Sign-On config screen. Builds, typechecks, lints and unit
-tests are green; the Postgres-dependent integration suites (…, sso) run in CI. SAML, SCIM
-and a real billing provider are the only remaining Phase-13 items — see
-[docs/roadmap.md](docs/roadmap.md).
+tests are green; the Postgres-dependent integration suites (…, sso) run in CI.
 
 **Phase 13d — Audit-log streaming + monitoring (landed).** On top of Phase 13c: push every
 matching activity-log entry to a per-organization SIEM stream, plus operational monitoring.

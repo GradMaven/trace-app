@@ -14,6 +14,7 @@ function LoginInner() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [slug, setSlug] = useState('');
+  const [protocol, setProtocol] = useState<'oidc' | 'saml'>('oidc');
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -31,7 +32,9 @@ function LoginInner() {
   function startSso(e: React.FormEvent) {
     e.preventDefault();
     const s = slug.trim().toLowerCase();
-    if (s) window.location.href = `${API_BASE}/auth/sso/${encodeURIComponent(s)}/start`;
+    if (!s) return;
+    const path = protocol === 'saml' ? 'auth/saml' : 'auth/sso';
+    window.location.href = `${API_BASE}/${path}/${encodeURIComponent(s)}/start`;
   }
 
   return (
@@ -95,6 +98,20 @@ function LoginInner() {
               <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>
                 Your organization&apos;s short name, e.g. <span className="mono">nordwerk</span>.
               </p>
+            </div>
+            <div className="field">
+              <label className="label" htmlFor="sso-protocol">
+                Protocol
+              </label>
+              <select
+                id="sso-protocol"
+                className="input"
+                value={protocol}
+                onChange={(e) => setProtocol(e.target.value === 'saml' ? 'saml' : 'oidc')}
+              >
+                <option value="oidc">OpenID Connect</option>
+                <option value="saml">SAML 2.0</option>
+              </select>
             </div>
             <button className="btn" type="submit" disabled={!slug.trim()}>
               Continue with SSO →

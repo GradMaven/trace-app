@@ -847,6 +847,77 @@ sso_link(id, organization_id, user_id, identity_provider_id, external_id,
   `withOrgContext`. `sso_login_request` is not RLS'd (state lookup before any
   context exists).
 
+### Single sign-on — SAML 2.0 (Phase 13f)
+
+```
+saml_provider(id, organization_id UNIQUE, enabled, idp_entity_id, sso_url,
+              certificates text[], email_attribute NULL, name_attribute NULL,
+              groups_attribute NULL, want_assertions_signed default true,
+              role_mapping jsonb, allowed_email_domains text[],
+              created_by_user_id, created_at, updated_at)
+              -- only the IdP's PUBLIC signing certs are stored; no secret
+
+saml_login_request(id, organization_id, saml_request_id UNIQUE, relay_state UNIQUE,
+                   redirect_after NULL, expires_at, consumed_at NULL, created_at)
+                   -- NOT RLS'd (looked up by `relay_state` at the ACS, pre-auth)
+
+saml_link(id, organization_id, user_id, saml_provider_id, name_id,
+          last_login_at, created_at,
+          UNIQUE(saml_provider_id, name_id), UNIQUE(saml_provider_id, user_id))
+```
+
+- **`@trace/domain/access/saml.ts`** (pure, + `xml-crypto` / `@xmldom/xmldom` —
+  pure computation, no I/O): `generateSamlId()` (`_` + 40 hex),
+  `generateRelayState()`, `buildAuthnRequestXml` + `buildRedirectBindingUrl`
+  (SP-initiated HTTP-Redirect binding: `SAMLRequest = base64(DEFLATE(xml))`, raw
+  deflate; the request is **not** signed), `buildSpMetadataXml`,
+  `normalizeCertificatePem` (wrap a bare base64 body in PEM armour),
+  `verifySamlResponse(xml, {certificatesPem, spEntityId, acsUrl,
+  expectedInResponseTo, idpEntityId, wantAssertionsSigned?, now?, clockSkewSeconds?})`
+  → `{ok, nameId, nameIdFormat, sessionIndex, attributes} | {ok:false, reason}`.
+  The signature is verified by `xml-crypto` (`SignedXml`, `getCertFromKeyInfo` forced
+  to `null` so a document-embedded cert is never trusted); **identity is read only
+  from `getSignedReferences()`** — the canonicalised bytes the library reports as
+  covered by a verified signature — which structurally defeats XML-signature-
+  wrapping. On top: exactly one `<saml:Assertion>` (0 / >1 / `EncryptedAssertion`
+  → reject), every `<ds:Signature>` must be a direct child of the Response or that
+  Assertion, `SignatureMethod` / `DigestMethod` must be RSA-SHA-256/384/512 (SHA-1
+  rejected before the crypto call), assertion-level signature required unless
+  `wantAssertionsSigned` is false; then `Issuer` == `idpEntityId`, Status ==
+  `...:status:Success`, bearer `SubjectConfirmationData` `Recipient` == `acsUrl` /
+  `InResponseTo` == `expectedInResponseTo` / `NotOnOrAfter` in the future (±120 s),
+  `Conditions` `NotBefore` / `NotOnOrAfter` window, `AudienceRestriction` contains
+  `spEntityId` (none → reject), response `Destination` / `InResponseTo` when
+  present. `extractSamlIdentity(data, mapping)` — email / name / groups from the
+  configured attribute names, falling back to well-known attribute URIs then (for
+  email) the NameID. `mapSamlToRoleKeys(email, groups, roleMapping)` reuses the
+  13e `OidcRoleMapping` engine. `SAML_LOGIN_TTL_SECONDS = 600`.
+- **`@trace/db/saml.ts`**: `upsertSamlProvider` (SSO URL https; each certificate
+  parses as an X.509 cert **or** a public key; every mapped role must exist for
+  the org; audit `saml.provider_configured` / `_updated`), `getSamlProvider`
+  (adds `linkedMembers`), `deleteSamlProvider`. `beginSamlLogin(prisma, {orgSlug,
+  acsUrl, spEntityId, redirectAfter?})` — resolves the org by slug, reads its
+  provider (must be `enabled`) in `withOrgContext`, mints `saml_request_id` +
+  `relay_state`, writes a `saml_login_request`, returns `{redirectUrl}`.
+  `completeSamlLogin(prisma, {samlResponse, relayState, acsUrl, spEntityId})` —
+  loads + consumes the `saml_login_request` (single-use, TTL), reads the provider,
+  base64-decodes + `verifySamlResponse`, `extractSamlIdentity`,
+  `emailDomainAllowed`, `prisma.user.upsert({email})` with `external_id = NameID`,
+  then in `withOrgContext`: `saml_link.upsert` on `(provider, name_id)` +
+  `membership.create` with `mapSamlToRoleKeys` roles when none exists (re-activate
+  if suspended); audit `saml.member_provisioned` / `saml.login`. Returns
+  `{userId, organizationId, roleKeys, provisioned, redirectAfter}`.
+  `pruneSamlLoginRequests` (worker housekeeping).
+- API: `SamlAuthController` (`GET /auth/saml/:slug/start` → 302; `POST
+  /auth/saml/:slug/acs` → `completeSamlLogin` → `AuthService.createSession` →
+  302; `GET /auth/saml/:slug/metadata` → SP metadata XML; all `@Public()` +
+  `@MfaExempt()`, the ACS CSRF-exempt via `@Public()`; failures →
+  `/login?sso_error=`). `SamlConfigController` (`GET/PUT/DELETE /settings/saml` —
+  `security.manage`).
+- RLS: `saml_provider` + `saml_link` are `FORCE` `current_org()` (migration
+  `0034_saml_rls`). `saml_login_request` is not RLS'd (relay-state lookup at the
+  ACS before any context exists).
+
 ## Indexing (initial)
 
 - `(organization_id, <natural sort/filter col>)` composite on every high-traffic tenant

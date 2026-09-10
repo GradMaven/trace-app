@@ -12,7 +12,7 @@
  *
  * Run: `pnpm db:seed`
  */
-import { createHash } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import { createAIProvider } from '@trace/ai';
 import { billingPeriodKey, QUESTIONNAIRE_VERSION } from '@trace/domain';
 import { createStorageService, documentStorageKey } from '@trace/storage';
@@ -52,6 +52,7 @@ import {
   updateFinding,
   upsertControl,
   upsertIdentityProvider,
+  upsertSamlProvider,
   withOrgContext,
   withPlatformContext,
   writeAuditLog,
@@ -231,6 +232,9 @@ async function main(): Promise<void> {
   await seedSso();
   console.warn('[seed] Demo OIDC identity provider configured (disabled).');
 
+  await seedSaml();
+  console.warn('[seed] Demo SAML identity provider configured (disabled).');
+
   console.warn(
     '[seed] Done. Sign in as anke.roth@nordwerk.example (magic link printed by the API).',
   );
@@ -254,6 +258,43 @@ async function seedSso(): Promise<void> {
         tokenEndpoint: 'https://login.nordwerk.example/oauth2/token',
         jwksUri: 'https://login.nordwerk.example/oauth2/jwks',
         scopes: 'openid email profile groups',
+        roleMapping: {
+          defaultRoles: ['esg_analyst'],
+          emailDomainRoles: { 'nordwerk.example': ['sustainability_manager'] },
+          groupClaim: 'groups',
+          groupRoles: { 'trace-admins': ['organization_admin'] },
+        },
+        allowedEmailDomains: ['nordwerk.example'],
+      },
+      actorUserId: adminId,
+      requestId: 'seed',
+    });
+  });
+}
+
+async function seedSaml(): Promise<void> {
+  const orgId = DEMO.organizationId;
+  const adminId = DEMO.users.admin.id;
+
+  // A throwaway public key stands in for the IdP signing certificate — the demo
+  // provider is disabled, so no assertion is ever verified against it.
+  const { publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const certPem = publicKey.export({ type: 'spki', format: 'pem' }) as string;
+
+  await withOrgContext(orgId, async (db) => {
+    const existing = await db.samlProvider.findUnique({ where: { organizationId: orgId } });
+    if (existing) return;
+    await upsertSamlProvider(db, {
+      organizationId: orgId,
+      config: {
+        enabled: false, // demo only — leave magic-link login working
+        idpEntityId: 'https://login.nordwerk.example/saml/metadata',
+        ssoUrl: 'https://login.nordwerk.example/saml/sso',
+        certificates: [certPem],
+        emailAttribute: 'email',
+        nameAttribute: 'displayName',
+        groupsAttribute: 'groups',
+        wantAssertionsSigned: true,
         roleMapping: {
           defaultRoles: ['esg_analyst'],
           emailDomainRoles: { 'nordwerk.example': ['sustainability_manager'] },

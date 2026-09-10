@@ -66,6 +66,23 @@ export type {
   CompleteSsoLoginArgs,
   CompleteSsoLoginResult,
 } from './sso';
+
+export {
+  upsertSamlProvider,
+  getSamlProvider,
+  deleteSamlProvider,
+  beginSamlLogin,
+  completeSamlLogin,
+  listSamlLinks,
+  pruneSamlLoginRequests,
+} from './saml';
+export type {
+  SamlProviderConfig,
+  SamlProviderView,
+  BeginSamlLoginArgs,
+  CompleteSamlLoginArgs,
+  CompleteSamlLoginResult,
+} from './saml';
 export type {
   SubscriptionView,
   RecordUsageArgs,

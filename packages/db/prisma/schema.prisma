@@ -150,6 +150,9 @@ model Organization {
   identityProvider    IdentityProvider?
   ssoLinks           SsoLink[]
   ssoLoginRequests   SsoLoginRequest[]
+  samlProvider       SamlProvider?
+  samlLinks          SamlLink[]
+  samlLoginRequests  SamlLoginRequest[]
 
   @@map("organization")
 }
@@ -187,6 +190,7 @@ model User {
   sentInvitations Invitation[] @relation("InvitationInvitedBy")
   mfa             UserMfa?
   ssoLinks        SsoLink[]
+  samlLinks       SamlLink[]
 
   @@map("user")
 }
@@ -2199,4 +2203,74 @@ model SsoLink {
   @@unique([identityProviderId, externalId])
   @@unique([identityProviderId, userId])
   @@map("sso_link")
+}
+
+// ===========================================================================
+// Single sign-on — SAML 2.0 (Phase 13f)
+// ===========================================================================
+
+/// Per-organization SAML 2.0 identity provider (Web-Browser-SSO, HTTP-POST ACS).
+/// Parallel to `identity_provider` (OIDC). `certificates` are the IdP's PEM
+/// X.509 signing certs (public — no secret is stored). `roleMapping` is the
+/// @trace/domain `OidcRoleMapping`; the attribute columns name the SAML
+/// attributes carrying email / display name / groups.
+model SamlProvider {
+  id                   String   @id @default(uuid()) @db.Uuid
+  organizationId       String   @unique @map("organization_id") @db.Uuid
+  enabled              Boolean  @default(false)
+  idpEntityId          String   @map("idp_entity_id")
+  ssoUrl               String   @map("sso_url")
+  certificates         String[]
+  emailAttribute       String?  @map("email_attribute")
+  nameAttribute        String?  @map("name_attribute")
+  groupsAttribute      String?  @map("groups_attribute")
+  wantAssertionsSigned Boolean  @default(true) @map("want_assertions_signed")
+  roleMapping          Json     @default("{}") @map("role_mapping")
+  allowedEmailDomains  String[] @map("allowed_email_domains")
+  createdByUserId      String   @map("created_by_user_id") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  links        SamlLink[]
+
+  @@map("saml_provider")
+}
+
+/// Short-lived state for one in-flight SAML login: the AuthnRequest `ID` (matched
+/// against `InResponseTo` at the ACS) and the opaque `RelayState`. Looked up
+/// before any session exists — NOT RLS'd (like `sso_login_request`).
+model SamlLoginRequest {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  samlRequestId  String    @unique @map("saml_request_id")
+  relayState     String    @unique @map("relay_state")
+  redirectAfter  String?   @map("redirect_after")
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
+  consumedAt     DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("saml_login_request")
+}
+
+/// Links a TRACE user to a SAML NameID within one organization.
+model SamlLink {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  samlProviderId String   @map("saml_provider_id") @db.Uuid
+  nameId         String   @map("name_id")
+  lastLoginAt    DateTime @default(now()) @map("last_login_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  samlProvider SamlProvider @relation(fields: [samlProviderId], references: [id], onDelete: Cascade)
+
+  @@unique([samlProviderId, nameId])
+  @@unique([samlProviderId, userId])
+  @@map("saml_link")
 }

@@ -30,3 +30,4 @@ export * from './access/audit-stream';
 export * from './access/prometheus';
 export * from './access/health';
 export * from './access/oidc';
+export * from './access/saml';
