@@ -3,7 +3,12 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node"]
+    "types": ["node"],
+    // Restated locally (not only inherited) so the API always compiles strict
+    // even if a build runs it where the `extends` chain can't be resolved —
+    // without `strictNullChecks`, `z.infer` widens every field to optional.
+    "strict": true,
+    "strictNullChecks": true
   },
   "include": ["src/**/*.ts"]
 }
