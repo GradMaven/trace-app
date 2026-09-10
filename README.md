@@ -45,8 +45,9 @@ storage, and writes an immutable versioned `regulatory_filing` row + a `filing.g
 audit entry. The API adds `GET /filings`, `POST /filings/generate`, `GET /filings/:id` and
 `GET /filings/:id/download?format=json|html`; Web adds a Compliance → Regulatory Filings
 screen (readiness banner, gap report, disclosure tree, JSON/HTML download). Builds, typechecks,
-lints and unit tests are green; the Postgres-dependent integration suites (…, filing) run in
-CI. See [docs/roadmap.md](docs/roadmap.md) and
+lints and unit tests are green (`pnpm check`), and the full Postgres-backed integration suite —
+RLS tenant-isolation included — now passes against `postgres:16` both locally and in CI (25
+files / 134 tests). See [docs/roadmap.md](docs/roadmap.md) and
 [ADR-024](docs/decisions/ADR-024-regulatory-filing-export.md).
 
 **Phase 14d — Cross-tenant benchmarking (landed).** The last Carbon Twin slice, and the one
