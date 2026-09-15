@@ -39,9 +39,12 @@ async function bootstrap(): Promise<void> {
     jsonDocumentUrl: `${API_PREFIX}/openapi.json`,
   });
 
-  await app.listen(env.API_PORT);
-  logger.log(`TRACE API listening on http://localhost:${env.API_PORT}/${API_PREFIX}`);
-  logger.log(`OpenAPI docs at http://localhost:${env.API_PORT}/${API_PREFIX}/docs`);
+  // Hosts that assign the listen port at runtime (Render, Heroku, Railway, …)
+  // export it as `PORT`; fall back to the configured API_PORT for local/dev.
+  const port = Number(process.env.PORT) || env.API_PORT;
+  await app.listen(port);
+  logger.log(`TRACE API listening on http://localhost:${port}/${API_PREFIX}`);
+  logger.log(`OpenAPI docs at http://localhost:${port}/${API_PREFIX}/docs`);
 }
 
 void bootstrap();

@@ -3,8 +3,9 @@ import { loadEnv } from '@trace/config';
 import { createStorageService, type StorageService } from '@trace/storage';
 import { StorageController } from './storage.controller';
 import { ScanService, NoopScanService } from './scan.service';
+import { STORAGE_SERVICE } from './storage.tokens';
 
-export const STORAGE_SERVICE = Symbol('STORAGE_SERVICE');
+export { STORAGE_SERVICE };
 
 @Global()
 @Module({

@@ -4,7 +4,7 @@ import type { Response } from 'express';
 import { AppError } from '@trace/shared';
 import type { StorageService } from '@trace/storage';
 import { Public } from '../../common/decorators';
-import { STORAGE_SERVICE } from './storage.module';
+import { STORAGE_SERVICE } from './storage.tokens';
 
 /**
  * Serves local-driver document content for a valid signed token. Unused when
